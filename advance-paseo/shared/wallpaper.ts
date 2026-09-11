@@ -48,18 +48,23 @@ const blurField = z.preprocess(
   z.number().int().min(BLUR_RANGE.min).max(BLUR_RANGE.max).default(BLUR_RANGE.default),
 );
 
+const modeField = z.preprocess(
+  (value) =>
+    value === "plugin-themes" ? "system" : value === "any-theme" ? "all" : value,
+  z.enum(["system", "all"]).default("system"),
+);
+
 // The literal unions here are the authority; client palettes and the settings
 // UI derive their display labels from them via type-only imports.
 export const wallpaperSettingsSchema = z.object({
   enabled: z.boolean().default(true),
   /**
-   * "plugin-themes": the wallpaper only paints while one of this plugin's
-   * registered themes is active (marker-color detection, reliable).
-   * "any-theme": paint over any theme, picking the light/dark slot from the
-   * detected interface luminance (heuristic, may need re-tuning after Paseo
-   * updates).
+   * "system": paint only while a built-in Paseo theme is active — the
+   * wallpaper turns off when one of this plugin's own themes is selected.
+   * "all": paint over every theme. Both pick the light/dark slot from the
+   * detected interface luminance.
    */
-  mode: z.enum(["plugin-themes", "any-theme"]).default("plugin-themes"),
+  mode: modeField,
   /** Scrim strength in percent; 100 matches the original "balanced" preset. */
   scrim: scrimField,
   /** Frosted-glass blur in px applied to the largest surface; 0 disables. */

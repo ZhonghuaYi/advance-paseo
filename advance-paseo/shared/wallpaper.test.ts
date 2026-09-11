@@ -8,16 +8,21 @@ import {
 } from "./wallpaper";
 
 describe("wallpaperSettingsSchema", () => {
-  it("defaults to enabled plugin-themes mode with empty slots", () => {
+  it("defaults to enabled system-themes mode with empty slots", () => {
     expect(WALLPAPER_SETTINGS_DEFAULTS).toEqual({
       enabled: true,
-      mode: "plugin-themes",
+      mode: "system",
       scrim: SCRIM_RANGE.default,
       blur: BLUR_RANGE.default,
       accent: "graphite",
       light: null,
       dark: null,
     });
+  });
+
+  it("migrates the legacy mode names on read", () => {
+    expect(wallpaperSettingsSchema.parse({ mode: "plugin-themes" }).mode).toBe("system");
+    expect(wallpaperSettingsSchema.parse({ mode: "any-theme" }).mode).toBe("all");
   });
 
   it("accepts managed and path slot sources", () => {

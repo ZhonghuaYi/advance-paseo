@@ -431,9 +431,12 @@ function collectSamples(): SurfaceSample[] {
 function detectMode(strategy: WallpaperEngineState["mode"]): WallpaperMode | null {
   const samples = collectSamples();
   if (samples.length === 0) return null;
-  return strategy === "any-theme"
-    ? classifyLuminanceMode(samples)
-    : classifyMarkerMode(samples);
+  if (strategy === "system") {
+    // "System themes only": the wallpaper is off while one of this plugin's
+    // own palettes is the active theme, so a marker hit disables it.
+    if (classifyMarkerMode(samples) !== null) return null;
+  }
+  return classifyLuminanceMode(samples);
 }
 
 function clearDecorations(elements: Set<HTMLElement>): void {

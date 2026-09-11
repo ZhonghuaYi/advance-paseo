@@ -87,8 +87,8 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
   );
   const modeOptions = useMemo(
     () => [
-      { label: t.wallpaper.modePlugin, value: "plugin-themes" as const },
-      { label: t.wallpaper.modeAny, value: "any-theme" as const },
+      { label: t.wallpaper.modeSystem, value: "system" as const },
+      { label: t.wallpaper.modeAll, value: "all" as const },
     ],
     [t],
   );
@@ -293,9 +293,9 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
         <SettingsSelect
           label={t.wallpaper.activeWhenLabel}
           hint={
-            values.mode === "plugin-themes"
-              ? t.wallpaper.activeWhenPluginHint
-              : t.wallpaper.activeWhenAnyHint
+            values.mode === "system"
+              ? t.wallpaper.activeWhenSystemHint
+              : t.wallpaper.activeWhenAllHint
           }
           value={values.mode}
           options={modeOptions}

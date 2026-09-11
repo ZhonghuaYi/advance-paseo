@@ -3,6 +3,10 @@
 // a PanResponder for dragging / tap-to-jump, plus minus and plus steppers
 // for precise, keyboard-reachable adjustment. Values snap to `step` and are
 // clamped to [min, max] by construction.
+//
+// Layout mirrors the host SettingsRow rhythm: label left + value right on
+// the first line, optional hint beneath, then a fixed-height control row so
+// the steppers, track, and thumb stay vertically centered against each other.
 
 import { useEffect, useMemo, useRef } from "react";
 import { PanResponder, Pressable, Text, View } from "react-native";
@@ -28,7 +32,8 @@ interface SliderRowProps {
   readonly onRelease: (value: number) => void;
 }
 
-const TRACK_HEIGHT = 28;
+const CONTROL_HEIGHT = 32;
+const STEPPER_SIZE = 32;
 const BAR_HEIGHT = 4;
 const THUMB_SIZE = 16;
 
@@ -122,37 +127,43 @@ export function SliderRow(props: SliderRowProps) {
   const labelStyle = { color: theme.colors.foreground, fontSize: 14 };
   const valueStyle = { color: theme.colors.foregroundMuted, fontSize: 13 };
   const hintStyle = { color: theme.colors.foregroundMuted, fontSize: 12 };
-  const stepStyle = {
+  const stepperTextStyle = {
     color: disabled ? theme.colors.foregroundMuted : theme.colors.accent,
-    fontSize: 20,
-    lineHeight: 24,
+    fontSize: 18,
+    lineHeight: 18,
+  };
+  const stepperStyle = {
+    width: STEPPER_SIZE,
+    height: STEPPER_SIZE,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   };
 
   return (
-    <View style={{ paddingVertical: 8 }}>
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 2,
-        }}
-      >
+    <View style={{ paddingVertical: 6 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
         <Text style={labelStyle}>{label}</Text>
         <Text style={valueStyle}>{formatValue(value)}</Text>
       </View>
       {hint !== undefined && hint.length > 0 ? (
-        <Text style={[hintStyle, { marginBottom: 6 }]}>{hint}</Text>
+        <Text style={[hintStyle, { marginTop: 2, marginBottom: 6 }]}>{hint}</Text>
       ) : null}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          height: CONTROL_HEIGHT,
+        }}
+      >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={decreaseLabel}
           disabled={disabled}
-          hitSlop={8}
+          hitSlop={4}
           onPress={() => stepBy(-1)}
+          style={stepperStyle}
         >
-          <Text style={stepStyle} accessibilityElementsHidden>
+          <Text style={stepperTextStyle} accessibilityElementsHidden>
             −
           </Text>
         </Pressable>
@@ -165,7 +176,12 @@ export function SliderRow(props: SliderRowProps) {
           accessibilityRole="adjustable"
           accessibilityLabel={accessibilityLabel}
           accessibilityValue={{ min, max, now: value }}
-          style={{ flex: 1, height: TRACK_HEIGHT, justifyContent: "center" }}
+          style={{
+            flex: 1,
+            height: CONTROL_HEIGHT,
+            justifyContent: "center",
+            marginHorizontal: 4,
+          }}
         >
           <View
             style={{
@@ -190,7 +206,7 @@ export function SliderRow(props: SliderRowProps) {
             style={{
               position: "absolute",
               left: percent,
-              top: (TRACK_HEIGHT - THUMB_SIZE) / 2,
+              top: (CONTROL_HEIGHT - THUMB_SIZE) / 2,
               marginLeft: -THUMB_SIZE / 2,
               width: THUMB_SIZE,
               height: THUMB_SIZE,
@@ -203,10 +219,11 @@ export function SliderRow(props: SliderRowProps) {
           accessibilityRole="button"
           accessibilityLabel={increaseLabel}
           disabled={disabled}
-          hitSlop={8}
+          hitSlop={4}
           onPress={() => stepBy(1)}
+          style={stepperStyle}
         >
-          <Text style={stepStyle} accessibilityElementsHidden>
+          <Text style={stepperTextStyle} accessibilityElementsHidden>
             +
           </Text>
         </Pressable>

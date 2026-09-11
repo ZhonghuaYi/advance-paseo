@@ -33,11 +33,11 @@ Future palettes ship here as presets.
   and diffs — all carrying the same frosted-glass language while this
   plugin's settings screen is open.
 - **Activation modes**:
-  - *Plugin themes only* (default, reliable) — the wallpaper paints while one
-    of this plugin's themes is selected (Advance Cream / Advance Indigo /
-    Miku Future Light / Dark), detected through unique marker colors.
-  - *Any theme* (heuristic) — paints over whatever theme is active, choosing
-    the light/dark slot by the interface's detected luminance.
+  - *System themes only* (default) — the wallpaper paints while a built-in
+    Paseo theme is active and turns off when one of this plugin's own themes
+    (Advance / Miku) is selected.
+  - *All themes* — paints over every theme.
+  - Both pick the light/dark slot from the detected interface luminance.
 - Style options: scrim strength (50–150%) and glass blur (0–40 px) adjusted
   with drag sliders that preview live and persist on release (the host UI kit
   ships no slider, so `client/ui/slider-row.tsx` builds one from React Native
