@@ -13,6 +13,9 @@
 // - The control row has a fixed height with every element centered on the
 //   same line, matching the host SettingsRow rhythm: label + value first,
 //   optional hint beneath, then the slider.
+// - Padding mirrors the host kit's settingsStyles.row exactly (16 on all
+//   sides, hint marginTop 4) so this row's label aligns with neighboring
+//   SettingsRow labels inside the same card.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, Text, View } from "react-native";
@@ -44,6 +47,10 @@ const STEPPER_STROKE = 2;
 const STEPPER_LENGTH = 14;
 const BAR_HEIGHT = 4;
 const THUMB_SIZE = 16;
+/** Host settingsStyles.row uses spacing[4] on both axes. */
+const ROW_PADDING = 16;
+/** Host rowHint uses spacing[1] between title and hint. */
+const HINT_GAP = 4;
 
 export function SliderRow(props: SliderRowProps) {
   const {
@@ -184,13 +191,13 @@ export function SliderRow(props: SliderRowProps) {
   );
 
   return (
-    <View style={{ paddingVertical: 6 }}>
+    <View style={{ paddingVertical: ROW_PADDING, paddingHorizontal: ROW_PADDING }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
         <Text style={labelStyle}>{label}</Text>
         <Text style={valueStyle}>{formatValue(value)}</Text>
       </View>
       {hint !== undefined && hint.length > 0 ? (
-        <Text style={[hintStyle, { marginTop: 2, marginBottom: 6 }]}>{hint}</Text>
+        <Text style={[hintStyle, { marginTop: HINT_GAP, marginBottom: 8 }]}>{hint}</Text>
       ) : null}
       <View
         style={{
