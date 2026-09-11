@@ -15,8 +15,22 @@ describe("buildWallpaperCss", () => {
     expect(css).toContain('[data-paseo-advance-workspace-sidebar]');
     expect(css).toContain('[data-paseo-advance-right-sidebar]');
     expect(css).toContain('[data-paseo-advance-workspace-tabs]');
+    expect(css).toContain('[data-paseo-advance-settings-surface]');
+    expect(css).toContain('[data-paseo-advance-settings-sidebar]');
     expect(css).toContain('data-paseo-advance-wallpaper="light"');
     expect(css).toContain('data-paseo-advance-wallpaper="dark"');
+  });
+
+  it("glasses the settings screen like the chat surfaces", () => {
+    const css = buildWallpaperCss(GRAPHITE_DEFAULT);
+    // Detail pane: chat-grade scrim over the image.
+    expect(css).toMatch(
+      /html\[data-paseo-advance-wallpaper="light"\] \[data-paseo-advance-settings-surface\]/,
+    );
+    // Cards: the same sheet glass as the composer.
+    expect(css).toContain('[data-testid="advance-settings-card"]');
+    expect(css).toContain("rgba(255, 255, 255, 0.55)");
+    expect(css).toContain("rgba(18, 20, 26, 0.58)");
   });
 
   it("keeps the compact-layout fallback and the desktop breakpoint", () => {

@@ -26,6 +26,10 @@ export const CHAT_CLEAR_ATTRIBUTE = "data-paseo-advance-chat-clear";
 export const WORKSPACE_SIDEBAR_ATTRIBUTE = "data-paseo-advance-workspace-sidebar";
 export const RIGHT_SIDEBAR_ATTRIBUTE = "data-paseo-advance-right-sidebar";
 export const WORKSPACE_TABS_ATTRIBUTE = "data-paseo-advance-workspace-tabs";
+export const SETTINGS_SURFACE_ATTRIBUTE = "data-paseo-advance-settings-surface";
+export const SETTINGS_SIDEBAR_ATTRIBUTE = "data-paseo-advance-settings-sidebar";
+/** testID our settings sections put on every host SettingsCard. */
+export const SETTINGS_CARD_TEST_ID = "advance-settings-card";
 
 const LIGHT_BACKGROUND: Rgb = WALLPAPER_TINTS.lightBackground;
 const DARK_BACKGROUND: Rgb = WALLPAPER_TINTS.darkBackground;
@@ -109,15 +113,17 @@ html[${ROOT_ATTRIBUTE}="dark"] [${CHAT_SURFACE_ATTRIBUTE}] {
   }
 
   /* Desktop chrome uses the same glass language as the chat. The left
-   * workspace list and the right explorer dock are marked at runtime because
-   * their outer React Native Web wrappers do not have stable class names.
-   * Each shell owns a faint copy of the wallpaper. Paseo's native sidebar
-   * surface is opaque, so backdrop-filter alone would otherwise have nothing
-   * textured to blur. */
+   * workspace list, the right explorer dock, and the settings screen's own
+   * sidebar are marked at runtime because their outer React Native Web
+   * wrappers do not have stable class names. Each shell owns a faint copy of
+   * the wallpaper. Paseo's native sidebar surface is opaque, so
+   * backdrop-filter alone would otherwise have nothing textured to blur. */
   html[${ROOT_ATTRIBUTE}] [${WORKSPACE_SIDEBAR_ATTRIBUTE}],
   html[${ROOT_ATTRIBUTE}] [${WORKSPACE_SIDEBAR_ATTRIBUTE}] > div,
   html[${ROOT_ATTRIBUTE}] [${RIGHT_SIDEBAR_ATTRIBUTE}],
-  html[${ROOT_ATTRIBUTE}] [${RIGHT_SIDEBAR_ATTRIBUTE}] > div {
+  html[${ROOT_ATTRIBUTE}] [${RIGHT_SIDEBAR_ATTRIBUTE}] > div,
+  html[${ROOT_ATTRIBUTE}] [${SETTINGS_SIDEBAR_ATTRIBUTE}],
+  html[${ROOT_ATTRIBUTE}] [${SETTINGS_SIDEBAR_ATTRIBUTE}] > div {
 ${sidebarGlass}
     background-clip: padding-box !important;
     background-color: inherit !important;
@@ -125,7 +131,8 @@ ${sidebarGlass}
   }
 
   html[${ROOT_ATTRIBUTE}="light"] [${WORKSPACE_SIDEBAR_ATTRIBUTE}],
-  html[${ROOT_ATTRIBUTE}="light"] [${RIGHT_SIDEBAR_ATTRIBUTE}] {
+  html[${ROOT_ATTRIBUTE}="light"] [${RIGHT_SIDEBAR_ATTRIBUTE}],
+  html[${ROOT_ATTRIBUTE}="light"] [${SETTINGS_SIDEBAR_ATTRIBUTE}] {
     background-color: ${sidebarTintLight} !important;
     background-image:
       ${imageLayer(sidebarVeilLight)},
@@ -139,7 +146,8 @@ ${sidebarGlass}
   }
 
   html[${ROOT_ATTRIBUTE}="dark"] [${WORKSPACE_SIDEBAR_ATTRIBUTE}],
-  html[${ROOT_ATTRIBUTE}="dark"] [${RIGHT_SIDEBAR_ATTRIBUTE}] {
+  html[${ROOT_ATTRIBUTE}="dark"] [${RIGHT_SIDEBAR_ATTRIBUTE}],
+  html[${ROOT_ATTRIBUTE}="dark"] [${SETTINGS_SIDEBAR_ATTRIBUTE}] {
     background-color: ${sidebarTintDark} !important;
     background-image:
       ${imageLayer(sidebarVeilDark)},
@@ -153,20 +161,24 @@ ${sidebarGlass}
   }
 
   html[${ROOT_ATTRIBUTE}="light"] [${WORKSPACE_SIDEBAR_ATTRIBUTE}] > div,
-  html[${ROOT_ATTRIBUTE}="light"] [${RIGHT_SIDEBAR_ATTRIBUTE}] > div {
+  html[${ROOT_ATTRIBUTE}="light"] [${RIGHT_SIDEBAR_ATTRIBUTE}] > div,
+  html[${ROOT_ATTRIBUTE}="light"] [${SETTINGS_SIDEBAR_ATTRIBUTE}] > div {
     background-color: ${sidebarFillLight} !important;
   }
 
   html[${ROOT_ATTRIBUTE}="dark"] [${WORKSPACE_SIDEBAR_ATTRIBUTE}] > div,
-  html[${ROOT_ATTRIBUTE}="dark"] [${RIGHT_SIDEBAR_ATTRIBUTE}] > div {
+  html[${ROOT_ATTRIBUTE}="dark"] [${RIGHT_SIDEBAR_ATTRIBUTE}] > div,
+  html[${ROOT_ATTRIBUTE}="dark"] [${SETTINGS_SIDEBAR_ATTRIBUTE}] > div {
     background-color: ${sidebarFillDark} !important;
   }
 
-  html[${ROOT_ATTRIBUTE}="light"] [${WORKSPACE_SIDEBAR_ATTRIBUTE}] {
+  html[${ROOT_ATTRIBUTE}="light"] [${WORKSPACE_SIDEBAR_ATTRIBUTE}],
+  html[${ROOT_ATTRIBUTE}="light"] [${SETTINGS_SIDEBAR_ATTRIBUTE}] {
     border-right: 1px solid ${rgbaString(LIGHT_RING, 0.28)} !important;
   }
 
-  html[${ROOT_ATTRIBUTE}="dark"] [${WORKSPACE_SIDEBAR_ATTRIBUTE}] {
+  html[${ROOT_ATTRIBUTE}="dark"] [${WORKSPACE_SIDEBAR_ATTRIBUTE}],
+  html[${ROOT_ATTRIBUTE}="dark"] [${SETTINGS_SIDEBAR_ATTRIBUTE}] {
     border-right: 1px solid ${rgbaString(DARK_RING, 0.22)} !important;
   }
 
@@ -195,6 +207,55 @@ ${tabsGlass}
     background-color: ${tabsTintDark} !important;
     border-bottom: 1px solid ${rgbaString(DARK_RING, 0.18)} !important;
     box-shadow: inset 0 1px 0 ${rgbaString(DARK_RING, 0.09)};
+  }
+
+  /* The settings screen's detail pane is a base surface like the chat: the
+   * wallpaper plus the chat-grade scrim, while the header row and content
+   * wrappers between it and the plugin sections are cleared transparent by
+   * the engine so one continuous image shows. Only decorated while one of
+   * this plugin's settings screens is actually open. */
+  html[${ROOT_ATTRIBUTE}="light"] [${SETTINGS_SURFACE_ATTRIBUTE}] {
+    background-image:
+      ${imageLayer(chatScrimLight)},
+      var(${IMAGE_PROPERTY}) !important;
+    background-position: center right !important;
+    background-repeat: no-repeat !important;
+    background-size: cover !important;
+  }
+
+  html[${ROOT_ATTRIBUTE}="dark"] [${SETTINGS_SURFACE_ATTRIBUTE}] {
+    background-image:
+      ${imageLayer(chatScrimDark)},
+      var(${IMAGE_PROPERTY}) !important;
+    background-position: center right !important;
+    background-repeat: no-repeat !important;
+    background-size: cover !important;
+  }
+
+  /* Settings cards carry the same sheet glass as the composer and user
+   * messages so the settings experience matches the chat's frosted look. */
+  html[${ROOT_ATTRIBUTE}] [data-testid="${SETTINGS_CARD_TEST_ID}"] {
+${sheetGlass}
+    background-clip: padding-box !important;
+    border-style: solid !important;
+    border-width: 1px !important;
+    border-radius: 12px !important;
+  }
+
+  html[${ROOT_ATTRIBUTE}="light"] [data-testid="${SETTINGS_CARD_TEST_ID}"] {
+    background-color: rgba(255, 255, 255, 0.55) !important;
+    border-color: ${rgbaString(LIGHT_RING, 0.28)} !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.72),
+      0 10px 30px rgba(58, 60, 66, 0.14);
+  }
+
+  html[${ROOT_ATTRIBUTE}="dark"] [data-testid="${SETTINGS_CARD_TEST_ID}"] {
+    background-color: rgba(18, 20, 26, 0.58) !important;
+    border-color: ${rgbaString(DARK_RING, 0.22)} !important;
+    box-shadow:
+      inset 0 1px 0 ${rgbaString(DARK_RING, 0.12)},
+      0 10px 30px rgba(0, 0, 0, 0.22);
   }
 
   /* User-authored history and the real composer card use the same restrained

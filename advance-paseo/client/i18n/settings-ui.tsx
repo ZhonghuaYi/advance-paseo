@@ -13,6 +13,7 @@ import {
   SettingsSelect,
 } from "@getpaseo/plugin/client/ui";
 import { languageSettings } from "../../shared/i18n";
+import { SETTINGS_CARD_TEST_ID } from "../wallpaper/wallpaper-css";
 import { format } from "./dictionaries";
 import {
   applyPreferredLanguage,
@@ -57,7 +58,7 @@ export function LanguageSettingsSection({ theme }: PluginSurfaceProps) {
       title={t.language.sectionTitle}
       info={<Text style={mutedStyle}>{t.language.sectionInfo}</Text>}
     >
-      <SettingsCard>
+      <SettingsCard testID={SETTINGS_CARD_TEST_ID}>
         <SettingsSelect
           label={t.language.languageLabel}
           hint={

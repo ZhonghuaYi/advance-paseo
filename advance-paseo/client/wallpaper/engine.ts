@@ -37,6 +37,8 @@ import {
   LAYER_ID,
   RIGHT_SIDEBAR_ATTRIBUTE,
   ROOT_ATTRIBUTE,
+  SETTINGS_SIDEBAR_ATTRIBUTE,
+  SETTINGS_SURFACE_ATTRIBUTE,
   STYLE_ID,
   WORKSPACE_SIDEBAR_ATTRIBUTE,
   WORKSPACE_TABS_ATTRIBUTE,
@@ -246,6 +248,7 @@ export function installWallpaperEngine(
     if (effectiveMode !== null) {
       decorateChatSurfaces(instance.decorated);
       decorateWorkspaceChrome(instance.decorated);
+      decorateSettingsSurfaces(instance.decorated);
     }
     // Apply after decorating so a fresh decoration paints against the mode
     // the CSS expects, and skip DOM writes when nothing changed.
@@ -440,6 +443,8 @@ function clearDecorations(elements: Set<HTMLElement>): void {
     element.removeAttribute(WORKSPACE_SIDEBAR_ATTRIBUTE);
     element.removeAttribute(RIGHT_SIDEBAR_ATTRIBUTE);
     element.removeAttribute(WORKSPACE_TABS_ATTRIBUTE);
+    element.removeAttribute(SETTINGS_SURFACE_ATTRIBUTE);
+    element.removeAttribute(SETTINGS_SIDEBAR_ATTRIBUTE);
   }
   elements.clear();
 }
@@ -642,6 +647,48 @@ function decorateChatSurfaces(elements: Set<HTMLElement>): void {
     surface.setAttribute(CHAT_SURFACE_ATTRIBUTE, "");
     elements.add(surface);
     markTransparentPath(composer, surface, elements);
+  }
+}
+
+/**
+ * Glass the settings screen while one of this plugin's settings screens is
+ * open: the desktop detail pane (header + content) paints the wallpaper like
+ * the chat's base surface, and the settings sidebar gets the same treatment
+ * as the workspace sidebar. Anchors on Paseo's stable settings test-ids plus
+ * the root testID our own screen renders; no-ops elsewhere, so other
+ * settings pages keep their native look.
+ */
+function decorateSettingsSurfaces(elements: Set<HTMLElement>): void {
+  const root = document.getElementById("root");
+  if (!root) return;
+
+  const hooks = [
+    ...root.querySelectorAll<HTMLElement>('[data-testid="advance-settings-root"]'),
+  ];
+  if (hooks.length === 0) return;
+
+  for (const hook of hooks) {
+    const pane = hook.closest<HTMLElement>('[data-testid="settings-detail-pane"]');
+    if (!pane) continue;
+
+    // The content wrappers (ScrollView, centered column) between the plugin
+    // sections and the pane would otherwise sit opaque on the image.
+    markTransparentPath(hook, pane, elements);
+    pane.setAttribute(SETTINGS_SURFACE_ATTRIBUTE, "");
+    elements.add(pane);
+
+    // Same for the screen header row above the scroll view.
+    const headerTitle = pane.querySelector<HTMLElement>(
+      '[data-testid="settings-detail-header-title"]',
+    );
+    if (headerTitle) markTransparentPath(headerTitle, pane, elements);
+  }
+
+  for (const sidebar of root.querySelectorAll<HTMLElement>(
+    '[data-testid="settings-sidebar"]',
+  )) {
+    sidebar.setAttribute(SETTINGS_SIDEBAR_ATTRIBUTE, "");
+    elements.add(sidebar);
   }
 }
 

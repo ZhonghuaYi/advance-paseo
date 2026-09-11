@@ -28,6 +28,10 @@ Future palettes ship here as presets.
   `~/.paseo/advance-paseo/wallpapers/`. Assign one image per light/dark slot.
 - **Path reference**: alternatively point a slot at an image file on the
   daemon machine (read as-is, no copy).
+- **Painted surfaces**: chat history + composer, workspace and settings
+  sidebars, the settings detail pane, message cards, code blocks, terminals,
+  and diffs — all carrying the same frosted-glass language while this
+  plugin's settings screen is open.
 - **Activation modes**:
   - *Plugin themes only* (default, reliable) — the wallpaper paints while one
     of this plugin's themes is selected (Advance Cream / Advance Indigo /

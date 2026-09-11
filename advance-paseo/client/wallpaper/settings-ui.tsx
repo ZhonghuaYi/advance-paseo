@@ -23,6 +23,7 @@ import { isWebPlatform, pickWallpaperImage } from "../web";
 import { useText } from "../i18n/store";
 import { format as formatTemplate } from "../i18n/dictionaries";
 import { SliderRow } from "../ui/slider-row";
+import { SETTINGS_CARD_TEST_ID } from "./wallpaper-css";
 import {
   applyWallpaperState,
   engineStateOf,
@@ -281,7 +282,7 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
       title={t.wallpaper.sectionTitle}
       info={<Text style={mutedStyle}>{t.wallpaper.sectionInfo}</Text>}
     >
-      <SettingsCard>
+      <SettingsCard testID={SETTINGS_CARD_TEST_ID}>
         <SettingsSwitch
           label={t.wallpaper.masterLabel}
           hint={t.wallpaper.masterHint}
@@ -357,7 +358,7 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
       </SettingsCard>
 
       {(["light", "dark"] as const).map((slot) => (
-        <SettingsCard key={slot}>
+        <SettingsCard key={slot} testID={SETTINGS_CARD_TEST_ID}>
           <SettingsRow
             label={slot === "light" ? t.wallpaper.lightSlot : t.wallpaper.darkSlot}
             hint={describeSource(values[slot])}
@@ -412,7 +413,7 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
         </SettingsCard>
       ))}
 
-      <SettingsCard>
+      <SettingsCard testID={SETTINGS_CARD_TEST_ID}>
         <SettingsAction
           label={t.wallpaper.importLibraryLabel}
           hint={libraryHint}

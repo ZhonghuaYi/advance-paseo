@@ -11,6 +11,7 @@ import {
   type PluginSurfaceProps,
 } from "@getpaseo/plugin/client";
 import type { RpcOutput } from "@getpaseo/plugin";
+import { SETTINGS_CARD_TEST_ID } from "../wallpaper/wallpaper-css";
 import {
   SettingsAction,
   SettingsCard,
@@ -165,7 +166,7 @@ export function ProvidersSettingsSection({ theme }: PluginSurfaceProps) {
       title={t.providers.sectionTitle}
       info={<Text style={mutedStyle}>{t.providers.sectionInfo}</Text>}
     >
-      <SettingsCard>
+      <SettingsCard testID={SETTINGS_CARD_TEST_ID}>
         <SettingsSwitch
           label={t.providers.autoLabel}
           hint={t.providers.autoHint}
@@ -183,7 +184,7 @@ export function ProvidersSettingsSection({ theme }: PluginSurfaceProps) {
         />
       </SettingsCard>
 
-      <SettingsCard>
+      <SettingsCard testID={SETTINGS_CARD_TEST_ID}>
         {values.watchPaths.map((path) => {
           const target = status?.watchPaths.find((item) => item.path === path);
           const hint =
@@ -220,7 +221,7 @@ export function ProvidersSettingsSection({ theme }: PluginSurfaceProps) {
         />
       </SettingsCard>
 
-      <SettingsCard>
+      <SettingsCard testID={SETTINGS_CARD_TEST_ID}>
         <SettingsRow label={t.providers.watcherLabel} hint={watcherHint}>
           <Pressable
             accessibilityRole="button"
