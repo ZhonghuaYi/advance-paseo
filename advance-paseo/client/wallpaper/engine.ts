@@ -37,6 +37,7 @@ import {
   LAYER_ID,
   RIGHT_SIDEBAR_ATTRIBUTE,
   ROOT_ATTRIBUTE,
+  SETTINGS_CARD_ATTRIBUTE,
   SETTINGS_SIDEBAR_ATTRIBUTE,
   SETTINGS_SURFACE_ATTRIBUTE,
   STYLE_ID,
@@ -448,6 +449,7 @@ function clearDecorations(elements: Set<HTMLElement>): void {
     element.removeAttribute(WORKSPACE_TABS_ATTRIBUTE);
     element.removeAttribute(SETTINGS_SURFACE_ATTRIBUTE);
     element.removeAttribute(SETTINGS_SIDEBAR_ATTRIBUTE);
+    element.removeAttribute(SETTINGS_CARD_ATTRIBUTE);
   }
   elements.clear();
 }
@@ -654,37 +656,39 @@ function decorateChatSurfaces(elements: Set<HTMLElement>): void {
 }
 
 /**
- * Glass the settings screen while one of this plugin's settings screens is
- * open: the desktop detail pane (header + content) paints the wallpaper like
- * the chat's base surface, and the settings sidebar gets the same treatment
- * as the workspace sidebar. Anchors on Paseo's stable settings test-ids plus
- * the root testID our own screen renders; no-ops elsewhere, so other
- * settings pages keep their native look.
+ * Glass the whole settings screen, on every settings page: the detail pane
+ * paints the wallpaper with the chat-grade scrim (the host's scroll and
+ * content wrappers are transparent, so whichever page is active shows the
+ * image), and the settings sidebar gets the same treatment as the workspace
+ * sidebar. Anchored on Paseo's stable settings test-ids only. Host settings
+ * cards are discovered by their visual fingerprint — the host kit renders
+ * them without any testID — so every page's cards share the frosted look;
+ * this plugin's own cards are additionally covered by their testID in CSS.
  */
 function decorateSettingsSurfaces(elements: Set<HTMLElement>): void {
   const root = document.getElementById("root");
   if (!root) return;
 
-  const hooks = [
-    ...root.querySelectorAll<HTMLElement>('[data-testid="advance-settings-root"]'),
-  ];
-  if (hooks.length === 0) return;
-
-  for (const hook of hooks) {
-    const pane = hook.closest<HTMLElement>('[data-testid="settings-detail-pane"]');
-    if (!pane) continue;
-
-    // The content wrappers (ScrollView, centered column) between the plugin
-    // sections and the pane would otherwise sit opaque on the image.
-    markTransparentPath(hook, pane, elements);
+  for (const pane of root.querySelectorAll<HTMLElement>(
+    '[data-testid="settings-detail-pane"]',
+  )) {
     pane.setAttribute(SETTINGS_SURFACE_ATTRIBUTE, "");
     elements.add(pane);
+    markHostSettingsCards(pane, elements);
 
-    // Same for the screen header row above the scroll view.
+    // Defensive: the header row wrapper is cleared so it never occludes the
+    // pane's image, matching the treatment this plugin's own screen gets.
     const headerTitle = pane.querySelector<HTMLElement>(
       '[data-testid="settings-detail-header-title"]',
     );
     if (headerTitle) markTransparentPath(headerTitle, pane, elements);
+  }
+
+  // The plugin's own settings screen still clears its innermost wrappers
+  // (ScrollView, centered column) up to the pane.
+  for (const hook of root.querySelectorAll<HTMLElement>('[data-testid="advance-settings-root"]')) {
+    const pane = hook.closest<HTMLElement>('[data-testid="settings-detail-pane"]');
+    if (pane) markTransparentPath(hook, pane, elements);
   }
 
   for (const sidebar of root.querySelectorAll<HTMLElement>(
@@ -692,6 +696,27 @@ function decorateSettingsSurfaces(elements: Set<HTMLElement>): void {
   )) {
     sidebar.setAttribute(SETTINGS_SIDEBAR_ATTRIBUTE, "");
     elements.add(sidebar);
+  }
+}
+
+/** Host SettingsCard fingerprint: content-wide, 8px radius, hairline border,
+ * fully opaque background. Radius and border come straight from the host kit's
+ * settingsStyles (borderRadius.lg = 8, borderWidth 1), which keeps buttons,
+ * inputs, and row controls out of the match. */
+function markHostSettingsCards(pane: HTMLElement, elements: Set<HTMLElement>): void {
+  for (const candidate of pane.querySelectorAll<HTMLElement>("div")) {
+    if (candidate.hasAttribute(SETTINGS_CARD_ATTRIBUTE)) continue;
+    const rect = candidate.getBoundingClientRect();
+    if (rect.width < 240 || rect.height < 36) continue;
+
+    const style = window.getComputedStyle(candidate);
+    if (style.borderRadius !== "8px") continue;
+    if (style.borderTopWidth !== "1px") continue;
+    const color = parseRgba(style.backgroundColor);
+    if (!color || color[3] < 0.95) continue;
+
+    candidate.setAttribute(SETTINGS_CARD_ATTRIBUTE, "");
+    elements.add(candidate);
   }
 }
 

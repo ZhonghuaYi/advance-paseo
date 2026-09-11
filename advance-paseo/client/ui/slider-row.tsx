@@ -1,8 +1,9 @@
 // Custom slider row for numeric settings. The host UI kit ships no slider,
 // so this is built from React Native core primitives only: a track View with
 // a PanResponder for dragging / tap-to-jump, plus minus and plus steppers
-// for precise, keyboard-reachable adjustment. Values snap to `step` and are
-// clamped to [min, max] by construction.
+// for precise, keyboard-reachable adjustment. Optional preset chips offer the
+// old three-step quick picks alongside free-form values. Values snap to
+// `step` and are clamped to [min, max] by construction.
 //
 // Layout notes (each choice fixes a real rendering quirk seen in RN Web):
 // - The fill width and thumb position use PIXEL offsets computed from the
@@ -21,6 +22,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, Text, View } from "react-native";
 import type { PluginTheme } from "@getpaseo/plugin";
 
+interface SliderPreset {
+  readonly label: string;
+  readonly value: number;
+}
+
 interface SliderRowProps {
   readonly theme: PluginTheme;
   readonly label: string;
@@ -31,6 +37,12 @@ interface SliderRowProps {
   readonly step: number;
   /** Rendered as the current value, e.g. "22 px". */
   readonly formatValue: (value: number) => string;
+  /**
+   * Optional quick-pick chips shown above the slider. The chip whose value
+   * equals the current value renders as active; picking one applies and
+   * commits it, while dragging the slider still allows any in-between value.
+   */
+  readonly presets?: readonly SliderPreset[];
   readonly accessibilityLabel: string;
   readonly decreaseLabel: string;
   readonly increaseLabel: string;
@@ -62,6 +74,7 @@ export function SliderRow(props: SliderRowProps) {
     max,
     step,
     formatValue,
+    presets,
     accessibilityLabel,
     decreaseLabel,
     increaseLabel,
@@ -145,6 +158,15 @@ export function SliderRow(props: SliderRowProps) {
     callbacks.current.onRelease(next);
   };
 
+  /** Preset chips commit immediately, like the steppers. */
+  const applyPreset = (next: number): void => {
+    if (callbacks.current.disabled) return;
+    if (next === latest.current) return;
+    latest.current = next;
+    callbacks.current.onValueChange(next);
+    callbacks.current.onRelease(next);
+  };
+
   const labelStyle = { color: theme.colors.foreground, fontSize: 14 };
   const valueStyle = { color: theme.colors.foregroundMuted, fontSize: 13 };
   const hintStyle = { color: theme.colors.foregroundMuted, fontSize: 12 };
@@ -198,6 +220,46 @@ export function SliderRow(props: SliderRowProps) {
       </View>
       {hint !== undefined && hint.length > 0 ? (
         <Text style={[hintStyle, { marginTop: HINT_GAP, marginBottom: 8 }]}>{hint}</Text>
+      ) : null}
+      {presets !== undefined && presets.length > 0 ? (
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 6,
+            marginTop: hint !== undefined && hint.length > 0 ? 2 : 6,
+            marginBottom: 8,
+          }}
+        >
+          {presets.map((preset) => {
+            const active = preset.value === value;
+            return (
+              <Pressable
+                key={preset.value}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active, disabled }}
+                disabled={disabled}
+                onPress={() => applyPreset(preset.value)}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: active ? theme.colors.accent : theme.colors.border,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: active ? theme.colors.accent : theme.colors.foregroundMuted,
+                  }}
+                >
+                  {preset.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       ) : null}
       <View
         style={{

@@ -27,8 +27,10 @@ describe("buildWallpaperCss", () => {
     expect(css).toMatch(
       /html\[data-paseo-advance-wallpaper="light"\] \[data-paseo-advance-settings-surface\]/,
     );
-    // Cards: the same sheet glass as the composer.
+    // Cards: the same sheet glass as the composer, for both our own cards
+    // (testID) and host cards the engine marks by fingerprint.
     expect(css).toContain('[data-testid="advance-settings-card"]');
+    expect(css).toContain('[data-paseo-advance-settings-card]');
     expect(css).toContain("rgba(255, 255, 255, 0.55)");
     expect(css).toContain("rgba(18, 20, 26, 0.58)");
   });

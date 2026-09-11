@@ -28,6 +28,8 @@ export const RIGHT_SIDEBAR_ATTRIBUTE = "data-paseo-advance-right-sidebar";
 export const WORKSPACE_TABS_ATTRIBUTE = "data-paseo-advance-workspace-tabs";
 export const SETTINGS_SURFACE_ATTRIBUTE = "data-paseo-advance-settings-surface";
 export const SETTINGS_SIDEBAR_ATTRIBUTE = "data-paseo-advance-settings-sidebar";
+/** Set by the engine on host settings cards found by their visual fingerprint. */
+export const SETTINGS_CARD_ATTRIBUTE = "data-paseo-advance-settings-card";
 /** testID our settings sections put on every host SettingsCard. */
 export const SETTINGS_CARD_TEST_ID = "advance-settings-card";
 
@@ -209,11 +211,11 @@ ${tabsGlass}
     box-shadow: inset 0 1px 0 ${rgbaString(DARK_RING, 0.09)};
   }
 
-  /* The settings screen's detail pane is a base surface like the chat: the
-   * wallpaper plus the chat-grade scrim, while the header row and content
-   * wrappers between it and the plugin sections are cleared transparent by
-   * the engine so one continuous image shows. Only decorated while one of
-   * this plugin's settings screens is actually open. */
+  /* Every settings detail pane — whichever page is active — is a base surface
+   * like the chat: the wallpaper plus the chat-grade scrim. The host's scroll
+   * and content wrappers are transparent, so the image shows through on all
+   * settings pages; the engine additionally clears this plugin's own screen
+   * wrappers and marks card-shaped host containers for the glass below. */
   html[${ROOT_ATTRIBUTE}="light"] [${SETTINGS_SURFACE_ATTRIBUTE}] {
     background-image:
       ${imageLayer(chatScrimLight)},
@@ -232,9 +234,12 @@ ${tabsGlass}
     background-size: cover !important;
   }
 
-  /* Settings cards carry the same sheet glass as the composer and user
-   * messages so the settings experience matches the chat's frosted look. */
-  html[${ROOT_ATTRIBUTE}] [data-testid="${SETTINGS_CARD_TEST_ID}"] {
+  /* Settings cards — our own (by testID) and host pages' (marked by the
+   * engine from their card fingerprint) — carry the same sheet glass as the
+   * composer and user messages so the whole settings experience shares the
+   * chat's frosted look. */
+  html[${ROOT_ATTRIBUTE}] [data-testid="${SETTINGS_CARD_TEST_ID}"],
+  html[${ROOT_ATTRIBUTE}] [${SETTINGS_CARD_ATTRIBUTE}] {
 ${sheetGlass}
     background-clip: padding-box !important;
     border-style: solid !important;
@@ -242,7 +247,8 @@ ${sheetGlass}
     border-radius: 12px !important;
   }
 
-  html[${ROOT_ATTRIBUTE}="light"] [data-testid="${SETTINGS_CARD_TEST_ID}"] {
+  html[${ROOT_ATTRIBUTE}="light"] [data-testid="${SETTINGS_CARD_TEST_ID}"],
+  html[${ROOT_ATTRIBUTE}="light"] [${SETTINGS_CARD_ATTRIBUTE}] {
     background-color: rgba(255, 255, 255, 0.55) !important;
     border-color: ${rgbaString(LIGHT_RING, 0.28)} !important;
     box-shadow:
@@ -250,7 +256,8 @@ ${sheetGlass}
       0 10px 30px rgba(58, 60, 66, 0.14);
   }
 
-  html[${ROOT_ATTRIBUTE}="dark"] [data-testid="${SETTINGS_CARD_TEST_ID}"] {
+  html[${ROOT_ATTRIBUTE}="dark"] [data-testid="${SETTINGS_CARD_TEST_ID}"],
+  html[${ROOT_ATTRIBUTE}="dark"] [${SETTINGS_CARD_ATTRIBUTE}] {
     background-color: rgba(18, 20, 26, 0.58) !important;
     border-color: ${rgbaString(DARK_RING, 0.22)} !important;
     box-shadow:

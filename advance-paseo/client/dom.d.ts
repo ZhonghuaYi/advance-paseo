@@ -28,6 +28,7 @@ interface Element {
   textContent: string | null;
   setAttribute(name: string, value: string): void;
   getAttribute(name: string): string | null;
+  hasAttribute(name: string): boolean;
   removeAttribute(name: string): void;
   remove(): void;
   prepend(node: Element): void;
@@ -163,12 +164,19 @@ declare const document: {
   ): void;
 };
 
+/** Read-only computed-style fields the settings-card fingerprint reads. */
+interface AdvanceComputedStyle {
+  readonly backgroundColor: string;
+  readonly borderRadius: string;
+  readonly borderTopWidth: string;
+}
+
 declare const window: {
   setTimeout(handler: () => void, timeout: number): number;
   clearTimeout(id: number): void;
   readonly innerWidth: number;
   readonly innerHeight: number;
-  getComputedStyle(element: Element): { readonly backgroundColor: string };
+  getComputedStyle(element: Element): AdvanceComputedStyle;
   addEventListener(type: string, listener: () => void): void;
   removeEventListener(type: string, listener: () => void): void;
 };

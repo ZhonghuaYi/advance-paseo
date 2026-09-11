@@ -41,8 +41,18 @@ export const en = {
     modeAll: "All themes",
     scrimLabel: "Scrim strength",
     scrimHint: "50–150%; higher dims the wallpaper behind content for readability",
+    scrimPresetLabels: {
+      subtle: "Subtle",
+      balanced: "Balanced",
+      vivid: "Vivid",
+    } as Record<string, string>,
     glassBlurLabel: "Glass blur",
     blurHint: "0–40 px; 0 turns the frosted glass off",
+    blurPresetLabels: {
+      off: "Off",
+      medium: "Medium",
+      strong: "Strong",
+    } as Record<string, string>,
     messageAccentLabel: "Message accent",
     accentLabels: {
       graphite: "Graphite",
@@ -147,8 +157,18 @@ export const zh: Dictionary = {
     modeAll: "所有主题",
     scrimLabel: "遮罩浓度",
     scrimHint: "50–150%；数值越大壁纸越暗，文字可读性越好",
+    scrimPresetLabels: {
+      subtle: "淡雅",
+      balanced: "均衡",
+      vivid: "鲜活",
+    } as Record<string, string>,
     glassBlurLabel: "玻璃模糊",
     blurHint: "0–40 px；0 表示关闭磨砂玻璃",
+    blurPresetLabels: {
+      off: "关闭",
+      medium: "中等",
+      strong: "强烈",
+    } as Record<string, string>,
     messageAccentLabel: "消息强调色",
     accentLabels: {
       graphite: "石墨灰",

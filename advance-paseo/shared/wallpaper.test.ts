@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  BLUR_PRESETS,
   BLUR_RANGE,
   parseWallpaperSettings,
+  SCRIM_PRESETS,
   SCRIM_RANGE,
   WALLPAPER_SETTINGS_DEFAULTS,
   wallpaperSettingsSchema,
@@ -52,6 +54,31 @@ describe("wallpaperSettingsSchema", () => {
       blur: 14,
       light: { kind: "managed", id: "keep-me" },
     });
+  });
+
+  it("keeps the slider preset chips in sync with the legacy values", () => {
+    // A migrated document must highlight the same chip that produced it.
+    expect(SCRIM_PRESETS).toEqual([
+      { id: "subtle", value: 125 },
+      { id: "balanced", value: 100 },
+      { id: "vivid", value: 78 },
+    ]);
+    expect(BLUR_PRESETS).toEqual([
+      { id: "off", value: 0 },
+      { id: "medium", value: 14 },
+      { id: "strong", value: 22 },
+    ]);
+    for (const preset of SCRIM_PRESETS) {
+      expect(preset.value).toBeGreaterThanOrEqual(SCRIM_RANGE.min);
+      expect(preset.value).toBeLessThanOrEqual(SCRIM_RANGE.max);
+    }
+    for (const preset of BLUR_PRESETS) {
+      expect(preset.value).toBeGreaterThanOrEqual(BLUR_RANGE.min);
+      expect(preset.value).toBeLessThanOrEqual(BLUR_RANGE.max);
+    }
+    // Defaults land exactly on a preset so fresh installs show an active chip.
+    expect(SCRIM_PRESETS.some((p) => p.value === WALLPAPER_SETTINGS_DEFAULTS.scrim)).toBe(true);
+    expect(BLUR_PRESETS.some((p) => p.value === WALLPAPER_SETTINGS_DEFAULTS.blur)).toBe(true);
   });
 
   it("round-trips numeric styling values", () => {

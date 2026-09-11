@@ -32,6 +32,25 @@ const LEGACY_BLUR_LEVELS: Record<string, number> = {
   strong: 22,
 };
 
+export type ScrimPresetId = keyof typeof LEGACY_SCRIM_LEVELS;
+export type BlurPresetId = keyof typeof LEGACY_BLUR_LEVELS;
+
+/**
+ * Quick-pick presets shown as chips next to the sliders. Values mirror the
+ * legacy levels exactly so a migrated document highlights the same chip that
+ * originally produced it; the slider still allows any value in between.
+ */
+export const SCRIM_PRESETS: readonly { readonly id: ScrimPresetId; readonly value: number }[] = [
+  { id: "subtle", value: LEGACY_SCRIM_LEVELS.subtle },
+  { id: "balanced", value: LEGACY_SCRIM_LEVELS.balanced },
+  { id: "vivid", value: LEGACY_SCRIM_LEVELS.vivid },
+];
+export const BLUR_PRESETS: readonly { readonly id: BlurPresetId; readonly value: number }[] = [
+  { id: "off", value: LEGACY_BLUR_LEVELS.off },
+  { id: "medium", value: LEGACY_BLUR_LEVELS.medium },
+  { id: "strong", value: LEGACY_BLUR_LEVELS.strong },
+];
+
 const scrimField = z.preprocess(
   (value) =>
     typeof value === "string" && value in LEGACY_SCRIM_LEVELS

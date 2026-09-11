@@ -33,7 +33,9 @@ import {
 import { resolveWallpaperImagesWith, type WallpaperReader } from "./loader";
 import { ACCENT_VALUES } from "./palettes";
 import {
+  BLUR_PRESETS,
   BLUR_RANGE,
+  SCRIM_PRESETS,
   SCRIM_RANGE,
   wallpaperDeleteRpc,
   wallpaperListRpc,
@@ -90,6 +92,14 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
       { label: t.wallpaper.modeSystem, value: "system" as const },
       { label: t.wallpaper.modeAll, value: "all" as const },
     ],
+    [t],
+  );
+  const scrimPresets = useMemo(
+    () => SCRIM_PRESETS.map((preset) => ({ label: t.wallpaper.scrimPresetLabels[preset.id], value: preset.value })),
+    [t],
+  );
+  const blurPresets = useMemo(
+    () => BLUR_PRESETS.map((preset) => ({ label: t.wallpaper.blurPresetLabels[preset.id], value: preset.value })),
     [t],
   );
 
@@ -311,6 +321,7 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
           max={SCRIM_RANGE.max}
           step={SCRIM_RANGE.step}
           formatValue={(value) => `${value}%`}
+          presets={scrimPresets}
           accessibilityLabel={t.wallpaper.scrimLabel}
           decreaseLabel={formatTemplate(t.common.decrease, { label: t.wallpaper.scrimLabel })}
           increaseLabel={formatTemplate(t.common.increase, { label: t.wallpaper.scrimLabel })}
@@ -335,6 +346,7 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
           max={BLUR_RANGE.max}
           step={BLUR_RANGE.step}
           formatValue={(value) => `${value} px`}
+          presets={blurPresets}
           accessibilityLabel={t.wallpaper.glassBlurLabel}
           decreaseLabel={formatTemplate(t.common.decrease, { label: t.wallpaper.glassBlurLabel })}
           increaseLabel={formatTemplate(t.common.increase, { label: t.wallpaper.glassBlurLabel })}
