@@ -53,6 +53,20 @@ its own neutral theme pair — *Advance Cream* (light) / *Advance Indigo*
 > internal DOM changes, the plugin falls back to the plain color themes. Do
 > not run this together with `miku-future` — both inject glass styling.
 
+### Theme switcher（主题切换）
+
+A palette button in the workspace header opens a popover with every built-in
+Paseo theme (light / dark / auto / zinc / midnight / claude / ghostty /
+pure black) and this plugin's contributed themes (Advance Cream / Advance
+Indigo). One click switches immediately.
+
+- Mechanism: Paseo keeps its appearance preference in localStorage under
+  `app-settings` and mirrors it into a react-query cache entry keyed
+  `["app-settings"]`; the popover merges the picked theme into that document
+  through the host-injected react-query instance, exactly like the app's own
+  appearance settings do — so the change applies live and persists. Desktop
+  and web only (native hosts show a hint instead).
+
 ### Providers auto-refresh（providers 自动刷新）
 
 Paseo caches its provider catalog (models, modes) and only re-discovers it on

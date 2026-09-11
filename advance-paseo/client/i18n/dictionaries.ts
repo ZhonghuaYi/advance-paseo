@@ -8,6 +8,23 @@ export const en = {
   command: {
     openSettings: "Open Advance Paseo settings",
   },
+  themeSwitcher: {
+    buttonTitle: "Switch theme",
+    systemGroup: "System themes",
+    customGroup: "Custom themes",
+    nativeFallback: "Theme switching is available in the desktop and web apps.",
+    failed: "Could not switch the theme.",
+    themeNameLabels: {
+      light: "Light",
+      dark: "Dark",
+      auto: "Auto",
+      zinc: "Zinc",
+      midnight: "Midnight",
+      claude: "Claude",
+      ghostty: "Ghostty",
+      pureBlack: "Pure black",
+    } as Record<string, string>,
+  },
   common: {
     couldNotRead: "Could not read settings",
     retry: "Retry",
@@ -123,6 +140,23 @@ export type Dictionary = typeof en;
 export const zh: Dictionary = {
   command: {
     openSettings: "打开 Advance Paseo 设置",
+  },
+  themeSwitcher: {
+    buttonTitle: "切换主题",
+    systemGroup: "系统主题",
+    customGroup: "自定义主题",
+    nativeFallback: "主题切换仅在桌面版和网页版可用。",
+    failed: "主题切换失败。",
+    themeNameLabels: {
+      light: "浅色",
+      dark: "深色",
+      auto: "跟随系统",
+      zinc: "锌灰",
+      midnight: "午夜",
+      claude: "Claude",
+      ghostty: "Ghostty",
+      pureBlack: "纯黑",
+    } as Record<string, string>,
   },
   common: {
     couldNotRead: "无法读取设置",

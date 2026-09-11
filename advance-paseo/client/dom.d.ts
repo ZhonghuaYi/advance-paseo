@@ -192,6 +192,13 @@ declare const Blob: {
 
 declare function atob(data: string): string;
 
+// --- App-settings persistence surface (theme switcher only) ---
+
+declare const localStorage: {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+};
+
 // --- Locale detection surface (client/web.ts only) ---
 
 declare const navigator: {
