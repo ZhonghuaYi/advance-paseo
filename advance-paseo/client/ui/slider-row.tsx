@@ -4,11 +4,17 @@
 // for precise, keyboard-reachable adjustment. Values snap to `step` and are
 // clamped to [min, max] by construction.
 //
-// Layout mirrors the host SettingsRow rhythm: label left + value right on
-// the first line, optional hint beneath, then a fixed-height control row so
-// the steppers, track, and thumb stay vertically centered against each other.
+// Layout notes (each choice fixes a real rendering quirk seen in RN Web):
+// - The fill width and thumb position use PIXEL offsets computed from the
+//   measured track width. Percentage `left` on absolutely positioned views
+//   proved unreliable, letting the thumb drift to the track's end.
+// - The steppers draw their glyphs with Views (bars) instead of text, whose
+//   baseline never centers optically with the track.
+// - The control row has a fixed height with every element centered on the
+//   same line, matching the host SettingsRow rhythm: label + value first,
+//   optional hint beneath, then the slider.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, Text, View } from "react-native";
 import type { PluginTheme } from "@getpaseo/plugin";
 
@@ -34,6 +40,8 @@ interface SliderRowProps {
 
 const CONTROL_HEIGHT = 32;
 const STEPPER_SIZE = 32;
+const STEPPER_STROKE = 2;
+const STEPPER_LENGTH = 14;
 const BAR_HEIGHT = 4;
 const THUMB_SIZE = 16;
 
@@ -56,8 +64,9 @@ export function SliderRow(props: SliderRowProps) {
   } = props;
 
   const trackRef = useRef<View>(null);
-  /** Track pageX/width, refreshed by onLayout (width) and measure (pageX). */
-  const geometry = useRef({ pageX: 0, width: 0 });
+  /** Track pageX, refreshed through measure() at gesture start. */
+  const pageX = useRef(0);
+  const [trackWidth, setTrackWidth] = useState(0);
   const latest = useRef(value);
 
   useEffect(() => {
@@ -69,7 +78,12 @@ export function SliderRow(props: SliderRowProps) {
   callbacks.current = { onValueChange, onRelease, disabled };
 
   const ratio = max > min ? (value - min) / (max - min) : 0;
-  const percent = `${Math.round(Math.min(100, Math.max(0, ratio * 100)))}%` as `${number}%`;
+  const clampedRatio = Math.min(1, Math.max(0, ratio));
+  const fillWidth = Math.round(trackWidth * clampedRatio);
+  const thumbLeft = Math.min(
+    Math.max(0, Math.round(trackWidth * clampedRatio - THUMB_SIZE / 2)),
+    Math.max(0, trackWidth - THUMB_SIZE),
+  );
 
   const snap = (raw: number): number => {
     const clamped = Math.min(max, Math.max(min, raw));
@@ -77,9 +91,8 @@ export function SliderRow(props: SliderRowProps) {
   };
 
   const valueFromClientX = (clientX: number): number => {
-    const { pageX, width } = geometry.current;
-    if (width <= 0) return latest.current;
-    return snap(min + ((clientX - pageX) / width) * (max - min));
+    if (trackWidth <= 0) return latest.current;
+    return snap(min + ((clientX - pageX.current) / trackWidth) * (max - min));
   };
 
   const panResponder = useMemo(
@@ -91,8 +104,8 @@ export function SliderRow(props: SliderRowProps) {
           // Refresh geometry for this gesture; the callback may land after
           // this grant on native, but the steppers and prior gestures have
           // usually primed it already.
-          trackRef.current?.measure((_x, _y, width, _h, pageX) => {
-            if (width > 0) geometry.current = { pageX, width };
+          trackRef.current?.measure((_x, _y, width, _h, measuredPageX) => {
+            if (width > 0) pageX.current = measuredPageX;
           });
           const next = valueFromClientX(event.nativeEvent.pageX);
           if (next !== latest.current) {
@@ -110,9 +123,10 @@ export function SliderRow(props: SliderRowProps) {
         onPanResponderRelease: () => callbacks.current.onRelease(latest.current),
         onPanResponderTerminate: () => callbacks.current.onRelease(latest.current),
       }),
-    // min/max/step are captured once; ranges are static per usage.
+    // min/max/step/trackWidth are captured through refs/state reads at event
+    // time except trackWidth, which the deps refresh when layout changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [min, max, step],
+    [min, max, step, trackWidth],
   );
 
   const stepBy = (direction: 1 | -1): void => {
@@ -127,17 +141,47 @@ export function SliderRow(props: SliderRowProps) {
   const labelStyle = { color: theme.colors.foreground, fontSize: 14 };
   const valueStyle = { color: theme.colors.foregroundMuted, fontSize: 13 };
   const hintStyle = { color: theme.colors.foregroundMuted, fontSize: 12 };
-  const stepperTextStyle = {
-    color: disabled ? theme.colors.foregroundMuted : theme.colors.accent,
-    fontSize: 18,
-    lineHeight: 18,
-  };
+  const stepperGlyphColor = disabled ? theme.colors.foregroundMuted : theme.colors.accent;
   const stepperStyle = {
     width: STEPPER_SIZE,
     height: STEPPER_SIZE,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   };
+
+  /** Minus/plus glyphs drawn as bars so they center on the track line. */
+  const stepperMinus = (
+    <View
+      style={{
+        width: STEPPER_LENGTH,
+        height: STEPPER_STROKE,
+        borderRadius: STEPPER_STROKE / 2,
+        backgroundColor: stepperGlyphColor,
+      }}
+    />
+  );
+  const stepperPlus = (
+    <View style={{ width: STEPPER_LENGTH, height: STEPPER_LENGTH, alignItems: "center", justifyContent: "center" }}>
+      <View
+        style={{
+          position: "absolute",
+          width: STEPPER_LENGTH,
+          height: STEPPER_STROKE,
+          borderRadius: STEPPER_STROKE / 2,
+          backgroundColor: stepperGlyphColor,
+        }}
+      />
+      <View
+        style={{
+          position: "absolute",
+          width: STEPPER_STROKE,
+          height: STEPPER_LENGTH,
+          borderRadius: STEPPER_STROKE / 2,
+          backgroundColor: stepperGlyphColor,
+        }}
+      />
+    </View>
+  );
 
   return (
     <View style={{ paddingVertical: 6 }}>
@@ -163,14 +207,13 @@ export function SliderRow(props: SliderRowProps) {
           onPress={() => stepBy(-1)}
           style={stepperStyle}
         >
-          <Text style={stepperTextStyle} accessibilityElementsHidden>
-            −
-          </Text>
+          {stepperMinus}
         </Pressable>
         <View
           ref={trackRef}
           onLayout={(event) => {
-            geometry.current.width = event.nativeEvent.layout.width;
+            const width = event.nativeEvent.layout.width;
+            if (width > 0) setTrackWidth(width);
           }}
           {...panResponder.panHandlers}
           accessibilityRole="adjustable"
@@ -183,31 +226,32 @@ export function SliderRow(props: SliderRowProps) {
             marginHorizontal: 4,
           }}
         >
+          {/* Track base */}
           <View
             style={{
               height: BAR_HEIGHT,
               borderRadius: BAR_HEIGHT / 2,
               backgroundColor: theme.colors.border,
-              overflow: "hidden",
             }}
-          >
-            <View
-              style={{
-                position: "absolute",
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: percent,
-                backgroundColor: theme.colors.accent,
-              }}
-            />
-          </View>
+          />
+          {/* Filled portion, pixel-positioned over the base */}
           <View
             style={{
               position: "absolute",
-              left: percent,
+              left: 0,
+              top: (CONTROL_HEIGHT - BAR_HEIGHT) / 2,
+              width: fillWidth,
+              height: BAR_HEIGHT,
+              borderRadius: BAR_HEIGHT / 2,
+              backgroundColor: theme.colors.accent,
+            }}
+          />
+          {/* Thumb, pixel-positioned over the base */}
+          <View
+            style={{
+              position: "absolute",
+              left: thumbLeft,
               top: (CONTROL_HEIGHT - THUMB_SIZE) / 2,
-              marginLeft: -THUMB_SIZE / 2,
               width: THUMB_SIZE,
               height: THUMB_SIZE,
               borderRadius: THUMB_SIZE / 2,
@@ -223,9 +267,7 @@ export function SliderRow(props: SliderRowProps) {
           onPress={() => stepBy(1)}
           style={stepperStyle}
         >
-          <Text style={stepperTextStyle} accessibilityElementsHidden>
-            +
-          </Text>
+          {stepperPlus}
         </Pressable>
       </View>
     </View>
