@@ -13,6 +13,8 @@ export const en = {
     retry: "Retry",
     storedInvalid: "Stored values are invalid",
     restoreDefaults: "Restore defaults",
+    decrease: "Decrease {label}",
+    increase: "Increase {label}",
   },
   language: {
     sectionTitle: "Language",
@@ -37,18 +39,10 @@ export const en = {
     activeWhenAnyHint: "Over any theme, following the detected light/dark interface",
     modePlugin: "Plugin themes only (reliable)",
     modeAny: "Any theme (heuristic)",
-    visibilityLabel: "Visibility",
-    scrimLabels: {
-      subtle: "Subtle",
-      balanced: "Balanced",
-      vivid: "Vivid",
-    } as Record<string, string>,
+    scrimLabel: "Scrim strength",
+    scrimHint: "50–150%; higher dims the wallpaper behind content for readability",
     glassBlurLabel: "Glass blur",
-    blurLabels: {
-      off: "Off",
-      medium: "Medium",
-      strong: "Strong",
-    } as Record<string, string>,
+    blurHint: "0–40 px; 0 turns the frosted glass off",
     messageAccentLabel: "Message accent",
     accentLabels: {
       graphite: "Graphite",
@@ -125,6 +119,8 @@ export const zh: Dictionary = {
     retry: "重试",
     storedInvalid: "存储的设置无效",
     restoreDefaults: "恢复默认值",
+    decrease: "减小{label}",
+    increase: "增大{label}",
   },
   language: {
     sectionTitle: "语言 / Language",
@@ -149,18 +145,10 @@ export const zh: Dictionary = {
     activeWhenAnyHint: "在任意主题上生效，自动跟随界面深浅色",
     modePlugin: "仅插件主题（可靠）",
     modeAny: "任意主题（启发式）",
-    visibilityLabel: "壁纸可见度",
-    scrimLabels: {
-      subtle: "轻柔",
-      balanced: "均衡",
-      vivid: "鲜艳",
-    },
+    scrimLabel: "遮罩浓度",
+    scrimHint: "50–150%；数值越大壁纸越暗，文字可读性越好",
     glassBlurLabel: "玻璃模糊",
-    blurLabels: {
-      off: "关闭",
-      medium: "中等",
-      strong: "强",
-    },
+    blurHint: "0–40 px；0 表示关闭磨砂玻璃",
     messageAccentLabel: "消息强调色",
     accentLabels: {
       graphite: "石墨灰",

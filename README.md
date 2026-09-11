@@ -34,7 +34,12 @@ Future palettes ship here as presets.
     Miku Future Light / Dark), detected through unique marker colors.
   - *Any theme* (heuristic) — paints over whatever theme is active, choosing
     the light/dark slot by the interface's detected luminance.
-- Style options: visibility scrim, glass blur, message accent family.
+- Style options: scrim strength (50–150%) and glass blur (0–40 px) adjusted
+  with drag sliders that preview live and persist on release (the host UI kit
+  ships no slider, so `client/ui/slider-row.tsx` builds one from React Native
+  core primitives), plus a message-accent family select. Values are clamped
+  to the documented ranges in the settings schema; documents stored by the
+  original three-step presets migrate automatically.
 
 > Mechanism note: Paseo's theme API is colors-only, so the wallpaper is a
 > DOM-injection enhancement layered on top of the registered color themes
@@ -86,6 +91,7 @@ advance-paseo/              ← the installable plugin directory
     dom.d.ts                ← minimal ambient DOM typings (typecheck only)
     web.ts                  ← web-only DOM helpers (file picker, canvas, locale)
     settings-screen.tsx     ← one section per feature
+    ui/                     ← shared plugin-local widgets (slider row)
     i18n/                   ← dictionaries (en/zh), language store, language UI
     wallpaper/              ← engine, css builder, palettes, detection, UI
     providers/              ← watcher status UI

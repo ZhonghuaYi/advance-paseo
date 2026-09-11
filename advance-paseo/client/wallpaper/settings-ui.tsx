@@ -22,6 +22,7 @@ import {
 import { isWebPlatform, pickWallpaperImage } from "../web";
 import { useText } from "../i18n/store";
 import { format as formatTemplate } from "../i18n/dictionaries";
+import { SliderRow } from "../ui/slider-row";
 import {
   applyWallpaperState,
   engineStateOf,
@@ -29,12 +30,10 @@ import {
   type WallpaperImages,
 } from "./engine";
 import { resolveWallpaperImagesWith, type WallpaperReader } from "./loader";
+import { ACCENT_VALUES } from "./palettes";
 import {
-  ACCENT_VALUES,
-  BLUR_VALUES,
-  SCRIM_VALUES,
-} from "./palettes";
-import {
+  BLUR_RANGE,
+  SCRIM_RANGE,
   wallpaperDeleteRpc,
   wallpaperListRpc,
   wallpaperReadPathRpc,
@@ -70,6 +69,9 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
     light: "",
     dark: "",
   });
+  /** Slider values while dragging; null when showing the persisted value. */
+  const [scrimDraft, setScrimDraft] = useState<number | null>(null);
+  const [blurDraft, setBlurDraft] = useState<number | null>(null);
 
   const mutedStyle = useMemo(() => ({ color: theme.colors.foregroundMuted }), [theme]);
   const dangerStyle = useMemo(() => ({ color: theme.colors.statusDanger }), [theme]);
@@ -78,14 +80,6 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
     [theme, layout.compact],
   );
 
-  const scrimOptions = useMemo(
-    () => SCRIM_VALUES.map((value) => ({ label: t.wallpaper.scrimLabels[value], value })),
-    [t],
-  );
-  const blurOptions = useMemo(
-    () => BLUR_VALUES.map((value) => ({ label: t.wallpaper.blurLabels[value], value })),
-    [t],
-  );
   const accentOptions = useMemo(
     () => ACCENT_VALUES.map((value) => ({ label: t.wallpaper.accentLabels[value], value })),
     [t],
@@ -307,19 +301,51 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
           disabled={busy || settings.saving}
           onValueChange={(value) => change("mode", value)}
         />
-        <SettingsSelect
-          label={t.wallpaper.visibilityLabel}
-          value={values.scrim}
-          options={scrimOptions}
+        <SliderRow
+          theme={theme}
+          label={t.wallpaper.scrimLabel}
+          hint={t.wallpaper.scrimHint}
+          value={scrimDraft ?? values.scrim}
+          min={SCRIM_RANGE.min}
+          max={SCRIM_RANGE.max}
+          step={SCRIM_RANGE.step}
+          formatValue={(value) => `${value}%`}
+          accessibilityLabel={t.wallpaper.scrimLabel}
+          decreaseLabel={formatTemplate(t.common.decrease, { label: t.wallpaper.scrimLabel })}
+          increaseLabel={formatTemplate(t.common.increase, { label: t.wallpaper.scrimLabel })}
           disabled={busy || settings.saving}
-          onValueChange={(value) => change("scrim", value)}
+          onValueChange={(next) => {
+            // Live preview: rebuild the stylesheet while dragging; the
+            // document is only written when the slider settles.
+            setScrimDraft(next);
+            applyWallpaperState({ ...engineStateOf(values), scrim: next });
+          }}
+          onRelease={(next) => {
+            setScrimDraft(null);
+            void commit({ ...values, scrim: next });
+          }}
         />
-        <SettingsSelect
+        <SliderRow
+          theme={theme}
           label={t.wallpaper.glassBlurLabel}
-          value={values.blur}
-          options={blurOptions}
+          hint={t.wallpaper.blurHint}
+          value={blurDraft ?? values.blur}
+          min={BLUR_RANGE.min}
+          max={BLUR_RANGE.max}
+          step={BLUR_RANGE.step}
+          formatValue={(value) => `${value} px`}
+          accessibilityLabel={t.wallpaper.glassBlurLabel}
+          decreaseLabel={formatTemplate(t.common.decrease, { label: t.wallpaper.glassBlurLabel })}
+          increaseLabel={formatTemplate(t.common.increase, { label: t.wallpaper.glassBlurLabel })}
           disabled={busy || settings.saving}
-          onValueChange={(value) => change("blur", value)}
+          onValueChange={(next) => {
+            setBlurDraft(next);
+            applyWallpaperState({ ...engineStateOf(values), blur: next });
+          }}
+          onRelease={(next) => {
+            setBlurDraft(null);
+            void commit({ ...values, blur: next });
+          }}
         />
         <SettingsSelect
           label={t.wallpaper.messageAccentLabel}

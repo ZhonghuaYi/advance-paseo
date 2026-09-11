@@ -147,32 +147,16 @@ export const WALLPAPER_TINTS = {
   darkTabs: hexToRgb("#131521"),
 } as const;
 
-// Wallpaper visibility presets scale the scrim alphas painted over the
-// image. "subtle" hides more of the image behind heavier scrims; "vivid"
-// lets more of it through. Readability-critical message cards and code
-// blocks are intentionally not scaled.
-export type ScrimLevel = WallpaperSettings["scrim"];
+/**
+ * Scrim strength in percent (see SCRIM_RANGE in shared/wallpaper.ts): 100
+ * keeps the authored base alphas, 150 paints the heaviest scrim, 50 the
+ * lightest. Readability-critical message cards and code blocks are
+ * intentionally not scaled.
+ */
+export type ScrimLevel = number;
 
-/** Selectable values; display labels live in the i18n dictionaries. */
-export const SCRIM_VALUES = ["subtle", "balanced", "vivid"] as const satisfies readonly ScrimLevel[];
-
-const SCRIM_SCALES: Record<ScrimLevel, number> = {
-  subtle: 1.25,
-  balanced: 1,
-  vivid: 0.78,
-};
-
-// Frosted-glass blur presets in CSS pixels.
-export type BlurLevel = WallpaperSettings["blur"];
-
-/** Selectable values; display labels live in the i18n dictionaries. */
-export const BLUR_VALUES = ["off", "medium", "strong"] as const satisfies readonly BlurLevel[];
-
-const BLUR_PIXELS: Record<BlurLevel, { sidebar: number; sheet: number; code: number }> = {
-  off: { sidebar: 0, sheet: 0, code: 0 },
-  medium: { sidebar: 14, sheet: 12, code: 10 },
-  strong: { sidebar: 22, sheet: 18, code: 16 },
-};
+/** Frosted-glass blur strength in px (see BLUR_RANGE in shared/wallpaper.ts). */
+export type BlurLevel = number;
 
 /** Shared visual options for the wallpaper enhancement and the settings UI. */
 export interface WallpaperStyleOptions {
@@ -198,16 +182,27 @@ function roundAlpha(alpha: number): number {
   return Math.min(1, Math.max(0.05, Math.round(alpha * 100) / 100));
 }
 
-export function scaledAlpha(base: number, scrim: ScrimLevel): number {
-  return roundAlpha(base * SCRIM_SCALES[scrim]);
+/** Base alpha scaled by the scrim percent (100 = authored base). */
+export function scaledAlpha(base: number, scrimPercent: number): number {
+  return roundAlpha(base * (scrimPercent / 100));
 }
 
-export function blurPixels(level: BlurLevel): {
+/**
+ * Per-surface blur tiers derived from one user value: the largest surface
+ * (sidebars) takes the full amount, sheets and code blocks step down so
+ * small text stays crisper than the chrome.
+ */
+export function blurTiers(px: number): {
   sidebar: number;
   sheet: number;
   code: number;
 } {
-  return BLUR_PIXELS[level];
+  const sidebar = Math.max(0, Math.round(px));
+  return {
+    sidebar,
+    sheet: Math.max(0, sidebar - 4),
+    code: Math.max(0, sidebar - 6),
+  };
 }
 
 type Rgba = readonly [red: number, green: number, blue: number, alpha: number];

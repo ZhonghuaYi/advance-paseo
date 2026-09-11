@@ -14,6 +14,40 @@ export const wallpaperSourceSchema = z.discriminatedUnion("kind", [
 
 export type WallpaperSource = z.infer<typeof wallpaperSourceSchema>;
 
+// Numeric styling ranges shared by the schema, the slider UI, and the CSS
+// builder. Kept here so every layer enforces the same bounds.
+export const SCRIM_RANGE = { min: 50, max: 150, step: 5, default: 100 } as const;
+export const BLUR_RANGE = { min: 0, max: 40, step: 1, default: 22 } as const;
+
+// Values persisted by the original three-step presets, migrated on read so
+// stored documents keep working after the numeric upgrade.
+const LEGACY_SCRIM_LEVELS: Record<string, number> = {
+  subtle: 125,
+  balanced: 100,
+  vivid: 78,
+};
+const LEGACY_BLUR_LEVELS: Record<string, number> = {
+  off: 0,
+  medium: 14,
+  strong: 22,
+};
+
+const scrimField = z.preprocess(
+  (value) =>
+    typeof value === "string" && value in LEGACY_SCRIM_LEVELS
+      ? LEGACY_SCRIM_LEVELS[value]
+      : value,
+  z.number().int().min(SCRIM_RANGE.min).max(SCRIM_RANGE.max).default(SCRIM_RANGE.default),
+);
+
+const blurField = z.preprocess(
+  (value) =>
+    typeof value === "string" && value in LEGACY_BLUR_LEVELS
+      ? LEGACY_BLUR_LEVELS[value]
+      : value,
+  z.number().int().min(BLUR_RANGE.min).max(BLUR_RANGE.max).default(BLUR_RANGE.default),
+);
+
 // The literal unions here are the authority; client palettes and the settings
 // UI derive their display labels from them via type-only imports.
 export const wallpaperSettingsSchema = z.object({
@@ -26,9 +60,10 @@ export const wallpaperSettingsSchema = z.object({
    * updates).
    */
   mode: z.enum(["plugin-themes", "any-theme"]).default("plugin-themes"),
-  // Keep these literals in sync with the mappings in client/wallpaper/palettes.ts.
-  scrim: z.enum(["subtle", "balanced", "vivid"]).default("balanced"),
-  blur: z.enum(["off", "medium", "strong"]).default("strong"),
+  /** Scrim strength in percent; 100 matches the original "balanced" preset. */
+  scrim: scrimField,
+  /** Frosted-glass blur in px applied to the largest surface; 0 disables. */
+  blur: blurField,
   accent: z.enum(["graphite", "magenta", "turquoise"]).default("graphite"),
   light: wallpaperSourceSchema.nullable().default(null),
   dark: wallpaperSourceSchema.nullable().default(null),

@@ -4,7 +4,7 @@
 
 import {
   ACCENT_HEXES,
-  blurPixels,
+  blurTiers,
   CARD_TINTS,
   hexToRgb,
   rgbaString,
@@ -13,6 +13,7 @@ import {
   type Rgb,
   type WallpaperStyleOptions,
 } from "./palettes";
+import { BLUR_RANGE, SCRIM_RANGE } from "../../shared/wallpaper";
 
 // Attribute and custom-property names shared with the runtime controller.
 export const LAYER_ID = "paseo-advance-wallpaper";
@@ -45,8 +46,11 @@ function glass(blurPx: number, saturate: number): string {
 }
 
 export function buildWallpaperCss(options: WallpaperStyleOptions): string {
-  const { scrim } = options;
-  const blur = blurPixels(options.blur);
+  // Re-clamp defensively: options may flow in from unvalidated callers.
+  const scrim = Math.min(SCRIM_RANGE.max, Math.max(SCRIM_RANGE.min, Math.round(options.scrim)));
+  const blur = blurTiers(
+    Math.min(BLUR_RANGE.max, Math.max(BLUR_RANGE.min, Math.round(options.blur))),
+  );
   const sidebarGlass = glass(blur.sidebar, 1.18);
   const sheetGlass = glass(blur.sheet, 1.16);
   const tabsGlass = glass(blur.sheet, 1.14);
