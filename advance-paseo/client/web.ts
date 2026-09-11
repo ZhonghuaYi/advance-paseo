@@ -22,6 +22,14 @@ export function isWebPlatform(): boolean {
   return Platform.OS === "web";
 }
 
+/** Map the browser locale to a plugin language; null when unavailable. */
+export function detectWebLanguage(): "zh" | "en" | null {
+  if (typeof navigator === "undefined") return null;
+  const language = navigator.language;
+  if (typeof language !== "string" || language.length === 0) return null;
+  return language.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
 /**
  * Open the host's file picker and return the chosen image, downscaled and
  * re-encoded as WebP (JPEG when WebP encoding is unavailable). Resolves null

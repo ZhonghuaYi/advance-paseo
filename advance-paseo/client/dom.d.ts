@@ -183,3 +183,9 @@ declare const Blob: {
 };
 
 declare function atob(data: string): string;
+
+// --- Locale detection surface (client/web.ts only) ---
+
+declare const navigator: {
+  readonly language: string | undefined;
+};

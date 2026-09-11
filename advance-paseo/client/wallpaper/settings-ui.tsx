@@ -1,6 +1,7 @@
 // Wallpaper section of the Advance Paseo settings screen. Edits persist
 // through the host-scoped settings document and reach the wallpaper engine
-// immediately for live feedback.
+// immediately for live feedback. All visible text comes from the i18n
+// dictionary.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
@@ -19,6 +20,8 @@ import {
   SettingsSwitch,
 } from "@getpaseo/plugin/client/ui";
 import { isWebPlatform, pickWallpaperImage } from "../web";
+import { useText } from "../i18n/store";
+import { format as formatTemplate } from "../i18n/dictionaries";
 import {
   applyWallpaperState,
   engineStateOf,
@@ -26,7 +29,11 @@ import {
   type WallpaperImages,
 } from "./engine";
 import { resolveWallpaperImagesWith, type WallpaperReader } from "./loader";
-import { ACCENT_CHOICES, BLUR_LEVELS, SCRIM_LEVELS } from "./palettes";
+import {
+  ACCENT_VALUES,
+  BLUR_VALUES,
+  SCRIM_VALUES,
+} from "./palettes";
 import {
   wallpaperDeleteRpc,
   wallpaperListRpc,
@@ -41,21 +48,6 @@ import {
 
 type WallpaperSlot = "light" | "dark";
 
-const MODE_CHOICES = [
-  { label: "Plugin themes only (reliable)", value: "plugin-themes" as const },
-  { label: "Any theme (heuristic)", value: "any-theme" as const },
-];
-
-function describeSource(
-  source: WallpaperSource | null,
-  library: readonly WallpaperMeta[],
-): string {
-  if (source === null) return "None";
-  if (source.kind === "path") return source.path;
-  const meta = library.find((item) => item.id === source.id);
-  return meta !== undefined ? meta.name : `Imported (${source.id.slice(0, 8)})`;
-}
-
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
   return `${Math.max(1, Math.round(bytes / 1024))} KiB`;
@@ -63,6 +55,7 @@ function formatBytes(bytes: number): string {
 
 export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) {
   const settings = useSettings(wallpaperSettings);
+  const t = useText();
   const listRpc = useRpc(wallpaperListRpc);
   const uploadRpc = useRpc(wallpaperUploadRpc);
   const deleteRpc = useRpc(wallpaperDeleteRpc);
@@ -83,6 +76,26 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
   const linkStyle = useMemo(
     () => ({ color: theme.colors.accent, fontSize: layout.compact ? 13 : 14 }),
     [theme, layout.compact],
+  );
+
+  const scrimOptions = useMemo(
+    () => SCRIM_VALUES.map((value) => ({ label: t.wallpaper.scrimLabels[value], value })),
+    [t],
+  );
+  const blurOptions = useMemo(
+    () => BLUR_VALUES.map((value) => ({ label: t.wallpaper.blurLabels[value], value })),
+    [t],
+  );
+  const accentOptions = useMemo(
+    () => ACCENT_VALUES.map((value) => ({ label: t.wallpaper.accentLabels[value], value })),
+    [t],
+  );
+  const modeOptions = useMemo(
+    () => [
+      { label: t.wallpaper.modePlugin, value: "plugin-themes" as const },
+      { label: t.wallpaper.modeAny, value: "any-theme" as const },
+    ],
+    [t],
   );
 
   const reader = useMemo<WallpaperReader>(
@@ -130,25 +143,25 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
 
   if (settings.status === "loading") {
     return (
-      <SettingsSection title="Wallpaper">
-        <Text style={mutedStyle}>Loading wallpaper settings…</Text>
+      <SettingsSection title={t.wallpaper.sectionTitle}>
+        <Text style={mutedStyle}>{t.wallpaper.loading}</Text>
       </SettingsSection>
     );
   }
 
   if (settings.status !== "ready") {
     return (
-      <SettingsSection title="Wallpaper">
+      <SettingsSection title={t.wallpaper.sectionTitle}>
         <Text style={dangerStyle}>{settings.error}</Text>
         <SettingsAction
-          label="Could not read settings"
-          actionLabel="Retry"
+          label={t.common.couldNotRead}
+          actionLabel={t.common.retry}
           onPress={() => void settings.reload()}
         />
         {settings.status === "invalid" ? (
           <SettingsAction
-            label="Stored values are invalid"
-            actionLabel="Restore defaults"
+            label={t.common.storedInvalid}
+            actionLabel={t.common.restoreDefaults}
             onPress={() => void settings.reset()}
           />
         ) : null}
@@ -157,6 +170,15 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
   }
 
   const values = settings.values;
+
+  const describeSource = (source: WallpaperSource | null): string => {
+    if (source === null) return t.wallpaper.none;
+    if (source.kind === "path") return source.path;
+    const meta = library.find((item) => item.id === source.id);
+    return meta !== undefined
+      ? meta.name
+      : formatTemplate(t.wallpaper.importedLabel, { id: source.id.slice(0, 8) });
+  };
 
   /** Apply + persist a full settings object, resolving slot images eagerly. */
   const commit = async (next: WallpaperSettings): Promise<void> => {
@@ -186,7 +208,7 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
   const importIntoSlot = async (slot: WallpaperSlot): Promise<void> => {
     const picked = await pickWallpaperImage();
     if (picked === null) {
-      if (!isWebPlatform()) setError("Importing images needs the desktop or web app.");
+      if (!isWebPlatform()) setError(t.wallpaper.importNeedsWeb);
       return;
     }
     setBusy(true);
@@ -205,7 +227,7 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
   const importToLibrary = async (): Promise<void> => {
     const picked = await pickWallpaperImage();
     if (picked === null) {
-      if (!isWebPlatform()) setError("Importing images needs the desktop or web app.");
+      if (!isWebPlatform()) setError(t.wallpaper.importNeedsWeb);
       return;
     }
     setBusy(true);
@@ -255,54 +277,54 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
     }
   };
 
+  const libraryHint =
+    library.length === 1
+      ? t.wallpaper.imagesStoredOne
+      : formatTemplate(t.wallpaper.imagesStoredMany, { count: library.length });
+
   return (
     <SettingsSection
-      title="Wallpaper"
-      info={
-        <Text style={mutedStyle}>
-          Paints any image behind chat and glass surfaces. Works in the desktop
-          and web apps; mobile keeps Paseo&apos;s native surfaces.
-        </Text>
-      }
+      title={t.wallpaper.sectionTitle}
+      info={<Text style={mutedStyle}>{t.wallpaper.sectionInfo}</Text>}
     >
       <SettingsCard>
         <SettingsSwitch
-          label="Wallpaper"
-          hint="Master switch for the painting enhancement"
+          label={t.wallpaper.masterLabel}
+          hint={t.wallpaper.masterHint}
           value={values.enabled}
           disabled={busy || settings.saving}
           onValueChange={(value) => change("enabled", value)}
         />
         <SettingsSelect
-          label="Active when"
+          label={t.wallpaper.activeWhenLabel}
           hint={
             values.mode === "plugin-themes"
-              ? "Only while an Advance or Miku theme is selected"
-              : "Over any theme, following the detected light/dark interface"
+              ? t.wallpaper.activeWhenPluginHint
+              : t.wallpaper.activeWhenAnyHint
           }
           value={values.mode}
-          options={MODE_CHOICES}
+          options={modeOptions}
           disabled={busy || settings.saving}
           onValueChange={(value) => change("mode", value)}
         />
         <SettingsSelect
-          label="Visibility"
+          label={t.wallpaper.visibilityLabel}
           value={values.scrim}
-          options={SCRIM_LEVELS}
+          options={scrimOptions}
           disabled={busy || settings.saving}
           onValueChange={(value) => change("scrim", value)}
         />
         <SettingsSelect
-          label="Glass blur"
+          label={t.wallpaper.glassBlurLabel}
           value={values.blur}
-          options={BLUR_LEVELS}
+          options={blurOptions}
           disabled={busy || settings.saving}
           onValueChange={(value) => change("blur", value)}
         />
         <SettingsSelect
-          label="Message accent"
+          label={t.wallpaper.messageAccentLabel}
           value={values.accent}
-          options={ACCENT_CHOICES}
+          options={accentOptions}
           disabled={busy || settings.saving}
           onValueChange={(value) => change("accent", value)}
         />
@@ -311,8 +333,8 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
       {(["light", "dark"] as const).map((slot) => (
         <SettingsCard key={slot}>
           <SettingsRow
-            label={`${slot === "light" ? "Light" : "Dark"} wallpaper`}
-            hint={describeSource(values[slot], library)}
+            label={slot === "light" ? t.wallpaper.lightSlot : t.wallpaper.darkSlot}
+            hint={describeSource(values[slot])}
           >
             {previews[slot] !== null ? (
               <Image
@@ -324,21 +346,23 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
                   marginLeft: layout.compact ? 8 : 12,
                 }}
                 resizeMode="cover"
-                accessibilityLabel={`${slot} wallpaper preview`}
+                accessibilityLabel={
+                  slot === "light" ? t.wallpaper.lightPreviewAlt : t.wallpaper.darkPreviewAlt
+                }
               />
             ) : null}
           </SettingsRow>
           <SettingsAction
-            label="Import image…"
-            hint="Pick a file; it is optimized and stored on the daemon"
-            actionLabel="Choose file"
+            label={t.wallpaper.importLabel}
+            hint={t.wallpaper.importHint}
+            actionLabel={t.wallpaper.chooseFile}
             disabled={busy || settings.saving}
             onPress={() => void importIntoSlot(slot)}
           />
           <SettingsInput
-            label="Or reference a path"
-            hint="Read on the daemon machine; supports ~/ shorthand"
-            placeholder="C:\pictures\wallpaper.webp"
+            label={t.wallpaper.pathLabel}
+            hint={t.wallpaper.pathHint}
+            placeholder={t.wallpaper.pathPlaceholder}
             initialValue={pathDrafts[slot]}
             onChangeText={(text) =>
               setPathDrafts((drafts) => ({ ...drafts, [slot]: text }))
@@ -346,15 +370,15 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
             disabled={busy || settings.saving}
           />
           <SettingsAction
-            label="Apply path"
-            actionLabel="Apply"
+            label={t.wallpaper.applyPathLabel}
+            actionLabel={t.wallpaper.apply}
             disabled={busy || settings.saving || pathDrafts[slot].trim().length === 0}
             onPress={() => void applyPath(slot)}
           />
           {values[slot] !== null ? (
             <SettingsAction
-              label="Clear this slot"
-              actionLabel="Clear"
+              label={t.wallpaper.clearSlotLabel}
+              actionLabel={t.wallpaper.clear}
               disabled={busy || settings.saving}
               onPress={() => void clearSlot(slot)}
             />
@@ -364,9 +388,9 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
 
       <SettingsCard>
         <SettingsAction
-          label="Import to library"
-          hint={`${library.length} image${library.length === 1 ? "" : "s"} stored on the daemon`}
-          actionLabel="Choose file"
+          label={t.wallpaper.importLibraryLabel}
+          hint={libraryHint}
+          actionLabel={t.wallpaper.chooseFile}
           disabled={busy || settings.saving}
           onPress={() => void importToLibrary()}
         />
@@ -379,24 +403,24 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
             <View style={{ flexDirection: "row", gap: 12 }}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Use ${item.name} for light mode`}
+                accessibilityLabel={formatTemplate(t.wallpaper.useForLightAlt, { name: item.name })}
                 onPress={() => void useFor("light", item)}
               >
-                <Text style={linkStyle}>Light</Text>
+                <Text style={linkStyle}>{t.wallpaper.useLight}</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Use ${item.name} for dark mode`}
+                accessibilityLabel={formatTemplate(t.wallpaper.useForDarkAlt, { name: item.name })}
                 onPress={() => void useFor("dark", item)}
               >
-                <Text style={linkStyle}>Dark</Text>
+                <Text style={linkStyle}>{t.wallpaper.useDark}</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Delete ${item.name}`}
+                accessibilityLabel={formatTemplate(t.wallpaper.deleteAlt, { name: item.name })}
                 onPress={() => void removeItem(item)}
               >
-                <Text style={dangerStyle}>Delete</Text>
+                <Text style={dangerStyle}>{t.wallpaper.delete}</Text>
               </Pressable>
             </View>
           </SettingsRow>

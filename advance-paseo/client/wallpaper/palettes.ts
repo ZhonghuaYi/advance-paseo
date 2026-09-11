@@ -126,11 +126,8 @@ export const ACCENT_HEXES = {
   turquoise: { light: "#087F79", dark: "#65DED2" },
 } as const satisfies Record<AccentChoice, { light: string; dark: string }>;
 
-export const ACCENT_CHOICES: readonly { label: string; value: AccentChoice }[] = [
-  { label: "Graphite", value: "graphite" },
-  { label: "Miku magenta", value: "magenta" },
-  { label: "Miku turquoise", value: "turquoise" },
-];
+/** Selectable values; display labels live in the i18n dictionaries. */
+export const ACCENT_VALUES = ["graphite", "magenta", "turquoise"] as const satisfies readonly AccentChoice[];
 
 /** Dark user-message card tint, matched to the chosen accent family. */
 export const CARD_TINTS = {
@@ -156,11 +153,8 @@ export const WALLPAPER_TINTS = {
 // blocks are intentionally not scaled.
 export type ScrimLevel = WallpaperSettings["scrim"];
 
-export const SCRIM_LEVELS: readonly { label: string; value: ScrimLevel }[] = [
-  { label: "Subtle", value: "subtle" },
-  { label: "Balanced", value: "balanced" },
-  { label: "Vivid", value: "vivid" },
-];
+/** Selectable values; display labels live in the i18n dictionaries. */
+export const SCRIM_VALUES = ["subtle", "balanced", "vivid"] as const satisfies readonly ScrimLevel[];
 
 const SCRIM_SCALES: Record<ScrimLevel, number> = {
   subtle: 1.25,
@@ -171,11 +165,8 @@ const SCRIM_SCALES: Record<ScrimLevel, number> = {
 // Frosted-glass blur presets in CSS pixels.
 export type BlurLevel = WallpaperSettings["blur"];
 
-export const BLUR_LEVELS: readonly { label: string; value: BlurLevel }[] = [
-  { label: "Off", value: "off" },
-  { label: "Medium", value: "medium" },
-  { label: "Strong", value: "strong" },
-];
+/** Selectable values; display labels live in the i18n dictionaries. */
+export const BLUR_VALUES = ["off", "medium", "strong"] as const satisfies readonly BlurLevel[];
 
 const BLUR_PIXELS: Record<BlurLevel, { sidebar: number; sheet: number; code: number }> = {
   off: { sidebar: 0, sheet: 0, code: 0 },

@@ -1,7 +1,7 @@
 // Providers auto-refresh section of the Advance Paseo settings screen.
 // Editing any setting saves the document and re-arms the daemon-side watcher;
 // the status card reports what the watcher last saw and offers a manual
-// refresh.
+// refresh. All visible text comes from the i18n dictionary.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, Text } from "react-native";
@@ -27,6 +27,8 @@ import {
   providersStatusRpc,
   type ProvidersSettings,
 } from "../../shared/providers";
+import { useText } from "../i18n/store";
+import { format } from "../i18n/dictionaries";
 
 type WatcherStatus = RpcOutput<typeof providersStatusRpc>;
 
@@ -37,14 +39,15 @@ const DEBOUNCE_CHOICES = [
   { label: "3 s", value: "3000" },
 ] as const;
 
-function formatTimestamp(iso: string | null): string {
-  if (iso === null) return "—";
+function formatTimestamp(iso: string | null, emDash: string): string {
+  if (iso === null) return emDash;
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
 }
 
 export function ProvidersSettingsSection({ theme }: PluginSurfaceProps) {
   const settings = useSettings(providersSettings);
+  const t = useText();
   const armRpc = useRpc(providersArmRpc);
   const statusRpc = useRpc(providersStatusRpc);
   const refreshRpc = useRpc(providersRefreshNowRpc);
@@ -72,19 +75,19 @@ export function ProvidersSettingsSection({ theme }: PluginSurfaceProps) {
 
   if (settings.status === "loading") {
     return (
-      <SettingsSection title="Providers auto-refresh">
-        <Text style={mutedStyle}>Loading providers settings…</Text>
+      <SettingsSection title={t.providers.sectionTitle}>
+        <Text style={mutedStyle}>{t.providers.loading}</Text>
       </SettingsSection>
     );
   }
 
   if (settings.status !== "ready") {
     return (
-      <SettingsSection title="Providers auto-refresh">
+      <SettingsSection title={t.providers.sectionTitle}>
         <Text style={dangerStyle}>{settings.error}</Text>
         <SettingsAction
-          label="Could not read settings"
-          actionLabel="Retry"
+          label={t.common.couldNotRead}
+          actionLabel={t.common.retry}
           onPress={() => void settings.reload()}
         />
       </SettingsSection>
@@ -147,28 +150,32 @@ export function ProvidersSettingsSection({ theme }: PluginSurfaceProps) {
     }
   };
 
+  const watcherHint =
+    status === null
+      ? t.providers.loading
+      : status.armed
+        ? format(t.providers.armed, {
+            ok: status.watchPaths.filter((item) => item.exists).length,
+            total: status.watchPaths.length,
+          })
+        : t.providers.notArmed;
+
   return (
     <SettingsSection
-      title="Providers auto-refresh"
-      info={
-        <Text style={mutedStyle}>
-          Watches provider CLI config files (Claude Code settings by default)
-          and refreshes Paseo&apos;s model catalog whenever they change, so new
-          models show up without the manual settings refresh.
-        </Text>
-      }
+      title={t.providers.sectionTitle}
+      info={<Text style={mutedStyle}>{t.providers.sectionInfo}</Text>}
     >
       <SettingsCard>
         <SettingsSwitch
-          label="Auto-refresh"
-          hint="Watch the files below and refresh the provider catalog on change"
+          label={t.providers.autoLabel}
+          hint={t.providers.autoHint}
           value={values.enabled}
           disabled={busy || settings.saving}
           onValueChange={(value) => change("enabled", value)}
         />
         <SettingsSelect
-          label="Quiet period"
-          hint="Collapses editor save bursts before refreshing"
+          label={t.providers.quietLabel}
+          hint={t.providers.quietHint}
           value={String(values.debounceMs)}
           options={[...DEBOUNCE_CHOICES]}
           disabled={busy || settings.saving}
@@ -179,66 +186,67 @@ export function ProvidersSettingsSection({ theme }: PluginSurfaceProps) {
       <SettingsCard>
         {values.watchPaths.map((path) => {
           const target = status?.watchPaths.find((item) => item.path === path);
-          const existsHint =
-            target === undefined ? path : target.exists ? `${path} ✓` : `${path} (missing)`;
+          const hint =
+            target === undefined
+              ? path
+              : target.exists
+                ? format(t.providers.fileOk, { path })
+                : format(t.providers.fileMissing, { path });
           return (
-            <SettingsRow key={path} label="Watched file" hint={existsHint}>
+            <SettingsRow key={path} label={t.providers.watchedFileLabel} hint={hint}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Stop watching ${path}`}
+                accessibilityLabel={format(t.providers.removeWatchAlt, { path })}
                 onPress={() => void removePath(path)}
               >
-                <Text style={dangerStyle}>Remove</Text>
+                <Text style={dangerStyle}>{t.providers.remove}</Text>
               </Pressable>
             </SettingsRow>
           );
         })}
         <SettingsInput
-          label="Add a file to watch"
-          hint="Absolute path on the daemon machine; supports ~/ shorthand"
+          label={t.providers.addLabel}
+          hint={t.providers.addHint}
           placeholder="~/.codex/config.toml"
           initialValue={newPath}
           onChangeText={setNewPath}
           disabled={busy || settings.saving}
         />
         <SettingsAction
-          label="Add path"
-          actionLabel="Add"
+          label={t.providers.addPathLabel}
+          actionLabel={t.providers.add}
           disabled={busy || settings.saving || newPath.trim().length === 0}
           onPress={() => void addPath()}
         />
       </SettingsCard>
 
       <SettingsCard>
-        <SettingsRow
-          label="Watcher"
-          hint={
-            status === null
-              ? "Loading status…"
-              : status.armed
-                ? `Armed · watching ${status.watchPaths.filter((item) => item.exists).length}/${status.watchPaths.length} files`
-                : "Not armed"
-          }
-        >
+        <SettingsRow label={t.providers.watcherLabel} hint={watcherHint}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Reload watcher status"
+            accessibilityLabel={t.providers.reload}
             onPress={() => void refreshStatus()}
           >
-            <Text style={linkStyle}>Reload</Text>
+            <Text style={linkStyle}>{t.providers.reload}</Text>
           </Pressable>
         </SettingsRow>
-        <SettingsRow label="Last config change" hint={formatTimestamp(status?.lastChangeAt ?? null)} />
-        <SettingsRow label="Last catalog refresh" hint={formatTimestamp(status?.lastRefreshAt ?? null)} />
+        <SettingsRow
+          label={t.providers.lastChangeLabel}
+          hint={formatTimestamp(status?.lastChangeAt ?? null, t.providers.emDash)}
+        />
+        <SettingsRow
+          label={t.providers.lastRefreshLabel}
+          hint={formatTimestamp(status?.lastRefreshAt ?? null, t.providers.emDash)}
+        />
         {status?.lastError != null ? (
-          <SettingsRow label="Last error">
+          <SettingsRow label={t.providers.lastErrorLabel}>
             <Text style={dangerStyle}>{status.lastError}</Text>
           </SettingsRow>
         ) : null}
         <SettingsAction
-          label="Refresh the provider catalog now"
-          hint="Same operation the watcher performs automatically"
-          actionLabel="Refresh"
+          label={t.providers.refreshNowLabel}
+          hint={t.providers.refreshNowHint}
+          actionLabel={t.providers.refresh}
           disabled={busy}
           onPress={() => void refreshNow()}
         />

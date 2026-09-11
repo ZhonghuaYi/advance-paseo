@@ -1,13 +1,20 @@
 # advance-paseo
 
 A Paseo plugin that bundles incremental enhancements for the Paseo app —
-starting with arbitrary wallpapers and automatic provider-catalog refresh —
-built as a feature-module system so new capabilities slot in without touching
-existing ones.
+arbitrary wallpapers, automatic provider-catalog refresh, and a Chinese /
+English interface — built as a feature-module system so new capabilities slot
+in without touching existing ones.
 
 成功安装并启用后，请在 Paseo 的 **Settings → Plugins → Advance Paseo** 中配置各功能。
 
 ## Features
+
+### Language / 语言
+
+The plugin's settings screens render in English or 中文. The preference
+(`Auto` / `English` / `中文`) lives at the top of the settings screen and swaps
+every feature's text live; `Auto` detects the locale from the browser
+(desktop/web) or the React Native host (mobile) and falls back to English.
 
 ### Wallpaper（任意壁纸）
 
@@ -77,8 +84,9 @@ advance-paseo/              ← the installable plugin directory
   index.server.ts           ← daemon entry: aggregates feature contributions
   client/                   ← app-side code (React Native primitives only)
     dom.d.ts                ← minimal ambient DOM typings (typecheck only)
-    web.ts                  ← web-only DOM helpers (file picker, canvas)
+    web.ts                  ← web-only DOM helpers (file picker, canvas, locale)
     settings-screen.tsx     ← one section per feature
+    i18n/                   ← dictionaries (en/zh), language store, language UI
     wallpaper/              ← engine, css builder, palettes, detection, UI
     providers/              ← watcher status UI
   server/                   ← daemon-side code (full Node access)
@@ -111,11 +119,15 @@ entries stay dumb aggregators.
    - `contribute.ts` exporting `contribute<Feature>(client): () => void`
      (called from `index.client.tsx`; return the cleanup),
    - a settings section component added to `client/settings-screen.tsx`.
-4. **UI rules** — React Native primitives only (`View`/`Text`/`Pressable`/
+4. **Text** — never hard-code UI strings: add keys to both dictionaries in
+   `client/i18n/dictionaries.ts` (`en` is the source of truth; `zh` must match
+   key-for-key — a unit test enforces this) and consume them through the
+   `useText()` hook; `{placeholder}` templates fill via `format()`.
+5. **UI rules** — React Native primitives only (`View`/`Text`/`Pressable`/
    `Image`/`TextInput`); colors from `theme.colors`; respect
    `layout.compact`. DOM access goes in `client/web.ts` (web-gated) or a
    guarded engine module; ambient DOM typings belong in `client/dom.d.ts`.
-5. **Tests** — pure logic (schemas, CSS builders, classifiers) gets vitest
+6. **Tests** — pure logic (schemas, CSS builders, classifiers) gets vitest
    coverage next to its module (`*.test.ts`).
 
 Verify with `npm run typecheck && npm test`, then
