@@ -1,0 +1,7 @@
+# Local agent workspace metadata
+.zcode/
+
+# Plugin build artifacts (see advance-paseo/.gitignore for details)
+node_modules/
+*.log
+.DS_Store
