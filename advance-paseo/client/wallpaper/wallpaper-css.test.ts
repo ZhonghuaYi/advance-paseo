@@ -41,6 +41,15 @@ describe("buildWallpaperCss", () => {
     expect(css).toContain("@media (max-width: 720px)");
   });
 
+  it("centers the image on every painted surface", () => {
+    const css = buildWallpaperCss(GRAPHITE_DEFAULT);
+    // Arbitrary wallpapers must sit centered (the miku-era right alignment
+    // cropped them); no surface may opt back into an edge-anchored image.
+    for (const match of css.matchAll(/background-position: ([^;]+);/g)) {
+      expect(match[1].replace(" !important", "").trim()).toBe("center");
+    }
+  });
+
   it("styles the fixed test-id surfaces and modern selectors", () => {
     const css = buildWallpaperCss(GRAPHITE_DEFAULT);
     expect(css).toContain('[data-testid="user-message"]');

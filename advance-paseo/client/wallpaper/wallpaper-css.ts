@@ -92,7 +92,7 @@ html[${ROOT_ATTRIBUTE}="light"] [${CHAT_SURFACE_ATTRIBUTE}] {
   background-image:
     ${imageLayer(chatScrimLight)},
     var(${IMAGE_PROPERTY}) !important;
-  background-position: center right !important;
+  background-position: center !important;
   background-repeat: no-repeat !important;
   background-size: cover !important;
 }
@@ -101,7 +101,7 @@ html[${ROOT_ATTRIBUTE}="dark"] [${CHAT_SURFACE_ATTRIBUTE}] {
   background-image:
     ${imageLayer(chatScrimDark)},
     var(${IMAGE_PROPERTY}) !important;
-  background-position: center right !important;
+  background-position: center !important;
   background-repeat: no-repeat !important;
   background-size: cover !important;
 }
@@ -139,7 +139,7 @@ ${sidebarGlass}
     background-image:
       ${imageLayer(sidebarVeilLight)},
       var(${IMAGE_PROPERTY}) !important;
-    background-position: right center !important;
+    background-position: center !important;
     background-repeat: no-repeat !important;
     background-size: cover !important;
     box-shadow:
@@ -154,7 +154,7 @@ ${sidebarGlass}
     background-image:
       ${imageLayer(sidebarVeilDark)},
       var(${IMAGE_PROPERTY}) !important;
-    background-position: right center !important;
+    background-position: center !important;
     background-repeat: no-repeat !important;
     background-size: cover !important;
     box-shadow:
@@ -220,7 +220,7 @@ ${tabsGlass}
     background-image:
       ${imageLayer(chatScrimLight)},
       var(${IMAGE_PROPERTY}) !important;
-    background-position: center right !important;
+    background-position: center !important;
     background-repeat: no-repeat !important;
     background-size: cover !important;
   }
@@ -229,7 +229,7 @@ ${tabsGlass}
     background-image:
       ${imageLayer(chatScrimDark)},
       var(${IMAGE_PROPERTY}) !important;
-    background-position: center right !important;
+    background-position: center !important;
     background-repeat: no-repeat !important;
     background-size: cover !important;
   }
@@ -373,7 +373,7 @@ ${codeGlass}
     background-image:
       ${imageLayer(fileScrimLight)},
       var(${IMAGE_PROPERTY}) !important;
-    background-position: center right !important;
+    background-position: center !important;
     background-repeat: no-repeat !important;
     background-size: cover !important;
   }
@@ -386,7 +386,7 @@ ${codeGlass}
     background-image:
       ${imageLayer(fileScrimDark)},
       var(${IMAGE_PROPERTY}) !important;
-    background-position: center right !important;
+    background-position: center !important;
     background-repeat: no-repeat !important;
     background-size: cover !important;
   }
@@ -411,7 +411,7 @@ ${codeGlass}
     z-index: 6;
     pointer-events: none;
     background-image: var(${IMAGE_PROPERTY});
-    background-position: center right;
+    background-position: center;
     background-repeat: no-repeat;
     background-size: cover;
   }
@@ -440,7 +440,7 @@ ${codeGlass}
     z-index: 4;
     pointer-events: none;
     background-image: var(${IMAGE_PROPERTY});
-    background-position: center right;
+    background-position: center;
     background-repeat: no-repeat;
     background-size: cover;
   }
