@@ -20,8 +20,9 @@ every feature's text live; `Auto` detects the locale from the browser
 
 Paints any image behind Paseo's chat and glass surfaces (desktop/web app;
 mobile keeps native surfaces). Successor to
-[paseo-miku-theme](https://github.com/ZhonghuaYi/paseo-miku-theme) — its Miku
-Future palettes ship here as presets.
+[paseo-miku-theme](https://github.com/ZhonghuaYi/paseo-miku-theme), shipping
+its own neutral theme pair — *Advance Cream* (light) / *Advance Indigo*
+(dark) — that stays balanced under arbitrary wallpapers.
 
 - **Import & manage**: pick images in the settings screen; they are downscaled
   to ≤2560 px and re-encoded as WebP in the app, then stored daemon-side under
@@ -29,19 +30,20 @@ Future palettes ship here as presets.
 - **Path reference**: alternatively point a slot at an image file on the
   daemon machine (read as-is, no copy).
 - **Painted surfaces**: chat history + composer, workspace and settings
-  sidebars, the settings detail pane, message cards, code blocks, terminals,
-  and diffs — all carrying the same frosted-glass language while this
-  plugin's settings screen is open.
+  sidebars, the settings detail pane (on **every** settings page, with
+  card-shaped containers frosted the same way), message cards, code blocks,
+  terminals, and diffs — all carrying the same frosted-glass language.
 - **Activation modes**:
   - *System themes only* (default) — the wallpaper paints while a built-in
     Paseo theme is active and turns off when one of this plugin's own themes
-    (Advance / Miku) is selected.
+    (Advance Cream / Advance Indigo) is selected.
   - *All themes* — paints over every theme.
   - Both pick the light/dark slot from the detected interface luminance.
 - Style options: scrim strength (50–150%) and glass blur (0–40 px) adjusted
   with drag sliders that preview live and persist on release (the host UI kit
   ships no slider, so `client/ui/slider-row.tsx` builds one from React Native
-  core primitives), plus a message-accent family select. Values are clamped
+  core primitives), each flanked by the original three-step presets as
+  quick-pick chips, plus a message-accent family select. Values are clamped
   to the documented ranges in the settings schema; documents stored by the
   original three-step presets migrate automatically.
 

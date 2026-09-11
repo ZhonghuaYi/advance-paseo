@@ -5,7 +5,7 @@ import {
   relativeLuminance,
   type SurfaceSample,
 } from "./theme-detect";
-import { hexToRgb, MIKU_DARK_COLORS, MIKU_LIGHT_COLORS } from "./palettes";
+import { CREAM_LIGHT_COLORS, hexToRgb, INDIGO_DARK_COLORS } from "./palettes";
 
 const OPAQUE = 1;
 
@@ -32,7 +32,7 @@ describe("classifyLuminanceMode", () => {
   });
 
   it("classifies dark surfaces as dark", () => {
-    expect(classifyLuminanceMode([sampleOf(MIKU_DARK_COLORS.background, 4)])).toBe("dark");
+    expect(classifyLuminanceMode([sampleOf(INDIGO_DARK_COLORS.background, 4)])).toBe("dark");
   });
 
   it("weights large surfaces over small ones", () => {
@@ -53,16 +53,16 @@ describe("classifyLuminanceMode", () => {
 });
 
 describe("classifyMarkerMode", () => {
-  it("detects the Miku light palette", () => {
-    expect(classifyMarkerMode([sampleOf(MIKU_LIGHT_COLORS.background, 4)])).toBe("light");
+  it("detects the Advance Cream palette", () => {
+    expect(classifyMarkerMode([sampleOf(CREAM_LIGHT_COLORS.background, 4)])).toBe("light");
   });
 
-  it("detects the Miku dark palette", () => {
-    expect(classifyMarkerMode([sampleOf(MIKU_DARK_COLORS.background, 4)])).toBe("dark");
+  it("detects the Advance Indigo palette", () => {
+    expect(classifyMarkerMode([sampleOf(INDIGO_DARK_COLORS.background, 4)])).toBe("dark");
   });
 
   it("ignores colors near, but outside, the marker tolerance", () => {
-    const [red, green, blue] = hexToRgb(MIKU_LIGHT_COLORS.background);
+    const [red, green, blue] = hexToRgb(CREAM_LIGHT_COLORS.background);
     expect(
       classifyMarkerMode([{ color: [red - 40, green, blue, OPAQUE], weight: 4 }]),
     ).toBeNull();
@@ -70,8 +70,8 @@ describe("classifyMarkerMode", () => {
 
   it("resolves mixed evidence by weight", () => {
     const samples = [
-      sampleOf(MIKU_DARK_COLORS.raised, 1),
-      sampleOf(MIKU_LIGHT_COLORS.background, 4),
+      sampleOf(INDIGO_DARK_COLORS.raised, 1),
+      sampleOf(CREAM_LIGHT_COLORS.background, 4),
     ];
     expect(classifyMarkerMode(samples)).toBe("light");
   });

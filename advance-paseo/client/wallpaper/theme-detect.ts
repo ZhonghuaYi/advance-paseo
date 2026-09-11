@@ -1,13 +1,14 @@
 // Mode detection for the wallpaper engine. Two strategies share one sampling
 // pass over the rendered surfaces:
 //
-// - Marker mode ("plugin-themes"): scores computed background colors against
-//   the marker colors of this plugin's registered theme palettes. An
-//   unrelated Paseo theme matches nothing, so the wallpaper turns off.
-// - Luminance mode ("any-theme"): area-weighted average of opaque background
-//   luminance decides light vs dark, so the wallpaper follows whichever
-//   built-in or third-party theme is active. Heuristic by nature; re-tune
-//   the threshold if Paseo's stock palettes change radically.
+// - Marker mode: scores computed background colors against the marker colors
+//   of this plugin's registered theme palettes. In "system" mode a marker hit
+//   means one of this plugin's own themes is active and the wallpaper turns
+//   off; an unrelated Paseo theme matches nothing.
+// - Luminance mode: area-weighted average of opaque background luminance
+//   decides light vs dark, so the wallpaper follows whichever built-in or
+//   third-party theme is active. Heuristic by nature; re-tune the threshold
+//   if Paseo's stock palettes change radically.
 //
 // The classification functions are pure so they can be unit-tested; the DOM
 // sampling lives in the engine.

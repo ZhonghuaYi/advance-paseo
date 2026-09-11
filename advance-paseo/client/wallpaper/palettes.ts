@@ -4,40 +4,15 @@
 // detector derives its marker colors from here. Editing a color in one place
 // updates the theme, the visuals, and detection.
 //
-// Two palette pairs ship: the Miku Future palettes carried over from
-// paseo-miku-theme, and a neutral pair (warm cream / deep indigo) suited to
-// arbitrary wallpapers. Marker hues are deliberately distinctive so unrelated
-// Paseo themes do not accidentally enable the wallpaper in plugin-themes
-// mode.
+// One palette pair ships: a neutral pair (warm cream / deep indigo) suited
+// to arbitrary wallpapers. Marker hues are deliberately distinctive so
+// unrelated Paseo themes do not accidentally trip the plugin-theme check in
+// "system" mode.
 
 import type { PluginThemeContribution } from "@getpaseo/plugin";
 import type { WallpaperSettings } from "../../shared/wallpaper";
 
 export type Rgb = readonly [red: number, green: number, blue: number];
-
-export const MIKU_LIGHT_COLORS = {
-  background: "#F7FCFB",
-  foreground: "#203638",
-  raised: "#FFFFFF",
-  control: "#E6F5F3",
-  border: "#B9DCD8",
-  // Deeper than the iconic turquoise so light button labels meet WCAG AA.
-  accent: "#087F79",
-  mutedForeground: "#5A7375",
-  ring: "#2B8F8A",
-} as const;
-
-export const MIKU_DARK_COLORS = {
-  background: "#10181B",
-  foreground: "#EAF7F6",
-  raised: "#172326",
-  control: "#203236",
-  border: "#38555A",
-  // The canonical brighter Miku turquoise has strong contrast on dark canvas.
-  accent: "#39C5BB",
-  mutedForeground: "#9AB6B8",
-  ring: "#65DED2",
-} as const;
 
 export const CREAM_LIGHT_COLORS = {
   background: "#FAF6EF",
@@ -77,20 +52,6 @@ function theme(
   return { id, name, appearance, colors };
 }
 
-export const MIKU_PAIR: PalettePair = {
-  light: theme("advance-miku-light", "Miku Future Light", "light", MIKU_LIGHT_COLORS),
-  dark: theme("advance-miku-dark", "Miku Future Dark", "dark", MIKU_DARK_COLORS),
-  lightMarkers: [
-    hexToRgb(MIKU_LIGHT_COLORS.background),
-    hexToRgb(MIKU_LIGHT_COLORS.control),
-  ],
-  darkMarkers: [
-    hexToRgb(MIKU_DARK_COLORS.background),
-    hexToRgb(MIKU_DARK_COLORS.raised),
-    hexToRgb(MIKU_DARK_COLORS.control),
-  ],
-};
-
 export const NEUTRAL_PAIR: PalettePair = {
   light: theme("advance-cream", "Advance Cream", "light", CREAM_LIGHT_COLORS),
   dark: theme("advance-indigo", "Advance Indigo", "dark", INDIGO_DARK_COLORS),
@@ -106,7 +67,7 @@ export const NEUTRAL_PAIR: PalettePair = {
 };
 
 /** Every palette pair registered as official color themes. */
-export const PALETTE_PAIRS: readonly PalettePair[] = [MIKU_PAIR, NEUTRAL_PAIR];
+export const PALETTE_PAIRS: readonly PalettePair[] = [NEUTRAL_PAIR];
 
 /** Marker unions across every registered pair, for mode detection. */
 export const ALL_LIGHT_MARKERS: readonly Rgb[] = PALETTE_PAIRS.flatMap(
