@@ -17,7 +17,10 @@
 // shuffle text nodes are ignored, the detected light/dark mode is cached and
 // only re-derived when the theme signal changes (head mutations, class flips,
 // menu interactions, resize), and updates are throttled with a max-wait so a
-// continuous stream cannot starve decoration indefinitely.
+// continuous stream cannot starve decoration indefinitely. Surface-shell
+// mounts (pane switches, settings, new-workspace) skip the throttle: their
+// mutation batch re-decorates synchronously inside the observer microtask,
+// before paint, so a fresh view never renders one undecorated frame.
 
 import type { PluginThemeContribution } from "@getpaseo/plugin";
 import { WALLPAPER_SETTINGS_DEFAULTS, type WallpaperSettings } from "../../shared/wallpaper";
@@ -54,6 +57,24 @@ const WORKSPACE_SIDEBAR_ANCHORS = [
   '[data-testid="sidebar-sessions"]',
   '[data-testid="sidebar-search"]',
   '[data-testid="left-sidebar-resize-handle"]',
+].join(", ");
+
+/**
+ * Anchors whose mount means a new surface shell appeared (a pane switch,
+ * settings, or the new-workspace screen). When one of these shows up in a
+ * mutation batch, decoration runs synchronously inside the observer
+ * microtask — before the browser's next paint — so the fresh shell never
+ * renders one undecorated (opaque) frame.
+ */
+const SYNC_RESCUE_ANCHORS = [
+  '[data-testid="message-input-root"]',
+  '[data-testid="agent-chat-scroll"]',
+  WORKSPACE_SIDEBAR_ANCHORS,
+  '[data-testid="workspace-explorer-sidebar"]',
+  '[data-testid="workspace-tabs-row"]',
+  '[data-testid="settings-detail-pane"]',
+  '[data-testid="settings-sidebar"]',
+  '[data-testid^="new-workspace-"]',
 ].join(", ");
 
 /** Trailing debounce for mutation batches. */
@@ -237,7 +258,7 @@ export function installWallpaperEngine(
     clearDecorations(instance.decorated);
 
     if (instance.modeDirty) {
-      instance.mode = detectMode(instance.state.mode);
+      instance.mode = detectMode(instance.state.mode, instance.mode);
       instance.modeDirty = false;
     }
 
@@ -309,6 +330,16 @@ export function installWallpaperEngine(
     if (isTextOnlyBatch(records)) return;
     if (records.some((record) => record.type === "attributes")) {
       instance.modeDirty = true;
+    }
+    // A freshly mounted surface shell would paint opaque for one frame
+    // before the trailing debounce catches up — the visible "wallpaper
+    // flash" on view switches. Mutation callbacks run as microtasks BEFORE
+    // paint, so re-decorating here makes the first frame of the new view
+    // carry the wallpaper already. Other structural batches (streaming
+    // markdown blocks, list rows) still take the debounced path.
+    if (batchAddsSurfaceAnchor(records)) {
+      update();
+      return;
     }
     schedule(UPDATE_DEBOUNCE_MS);
   });
@@ -400,6 +431,20 @@ function containsNoElements(nodes: readonly unknown[]): boolean {
   return nodes.every((node) => !(node instanceof HTMLElement));
 }
 
+/** Does this mutation batch mount anything that looks like a surface shell?
+ * Checked with cheap selector probes on the added subtrees; full decoration
+ * only runs when one matches. */
+function batchAddsSurfaceAnchor(records: readonly MutationRecord[]): boolean {
+  for (const record of records) {
+    for (const node of record.addedNodes) {
+      if (!(node instanceof HTMLElement)) continue;
+      if (node.matches(SYNC_RESCUE_ANCHORS)) return true;
+      if (node.querySelector(SYNC_RESCUE_ANCHORS) !== null) return true;
+    }
+  }
+  return false;
+}
+
 /** Sample the painted surfaces once; both strategies share this pass. */
 function collectSamples(): SurfaceSample[] {
   const root = document.getElementById("root");
@@ -430,9 +475,15 @@ function collectSamples(): SurfaceSample[] {
   return samples;
 }
 
-function detectMode(strategy: WallpaperEngineState["mode"]): WallpaperMode | null {
+function detectMode(
+  strategy: WallpaperEngineState["mode"],
+  previousMode: WallpaperMode | null,
+): WallpaperMode | null {
   const samples = collectSamples();
-  if (samples.length === 0) return null;
+  // Empty samples mean mid-transition blindness (the DOM sits between two
+  // views), not a genuine "off" signal. Keeping the previous mode avoids a
+  // wallpaper-off flash that the next pass would immediately revert.
+  if (samples.length === 0) return previousMode;
   if (strategy === "system") {
     // "System themes only": the wallpaper is off while one of this plugin's
     // own palettes is the active theme, so a marker hit disables it.
