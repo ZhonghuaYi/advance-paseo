@@ -250,6 +250,7 @@ export function installWallpaperEngine(
       decorateChatSurfaces(instance.decorated);
       decorateWorkspaceChrome(instance.decorated);
       decorateSettingsSurfaces(instance.decorated);
+      decorateNewWorkspaceSurfaces(instance.decorated);
     }
     // Apply after decorating so a fresh decoration paints against the mode
     // the CSS expects, and skip DOM writes when nothing changed.
@@ -718,6 +719,42 @@ function markHostSettingsCards(pane: HTMLElement, elements: Set<HTMLElement>): v
     candidate.setAttribute(SETTINGS_CARD_ATTRIBUTE, "");
     elements.add(candidate);
   }
+}
+
+/**
+ * Paint the "new workspace" launch screen, which is a full-bleed route with
+ * an opaque surface0 root and no chat surfaces to hook onto. Anchors on the
+ * stable new-workspace-* test ids, walks up to the innermost viewport-sized
+ * opaque ancestor (the screen container), and gives it the chat base
+ * treatment; the wrappers between anchor and container are cleared.
+ */
+function decorateNewWorkspaceSurfaces(elements: Set<HTMLElement>): void {
+  const root = document.getElementById("root");
+  if (!root) return;
+
+  for (const anchor of root.querySelectorAll<HTMLElement>('[data-testid^="new-workspace-"]')) {
+    const surface = findFullBleedSurface(anchor);
+    if (surface === null) continue;
+    surface.setAttribute(CHAT_SURFACE_ATTRIBUTE, "");
+    elements.add(surface);
+    markTransparentPath(anchor, surface, elements);
+  }
+}
+
+/** Innermost ancestor covering most of the viewport with an opaque paint. */
+function findFullBleedSurface(anchor: HTMLElement): HTMLElement | null {
+  const viewportWidth = Math.max(1, window.innerWidth);
+  const viewportHeight = Math.max(1, window.innerHeight);
+  let current: HTMLElement | null = anchor;
+  while (current && current !== document.body) {
+    const rect = current.getBoundingClientRect();
+    if (rect.width >= viewportWidth * 0.6 && rect.height >= viewportHeight * 0.6) {
+      const color = parseRgba(window.getComputedStyle(current).backgroundColor);
+      if (color !== null && color[3] >= 0.9) return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
 }
 
 function dataUrlToBlobUrl(dataUrl: string): string | null {
