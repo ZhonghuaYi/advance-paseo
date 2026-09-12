@@ -9,6 +9,7 @@ import {
   mergeAppSettingsTheme,
   parseAppThemePreference,
 } from "./app-theme";
+import { buttonIdSuffix } from "./catalog";
 import { PALETTE_PAIRS } from "../wallpaper/palettes";
 
 describe("theme catalog", () => {
@@ -68,6 +69,25 @@ describe("theme catalog", () => {
         pluginThemeId: cream.pluginThemeId,
       }),
     ).toBe(false);
+  });
+});
+
+describe("button id sanitization", () => {
+  it("turns workspace ids into host-valid button id suffixes", () => {
+    // The host validates button ids against /^[a-z][a-z0-9-]*$/; real
+    // workspace ids contain underscores ("wks_ca0cd12d5de8c6d0") and would
+    // otherwise make addHeaderButton throw.
+    const buttonIdPattern = /^[a-z][a-z0-9-]*$/;
+    for (const [workspaceId, expected] of [
+      ["wks_ca0cd12d5de8c6d0", "wks-ca0cd12d5de8c6d0"],
+      ["wks__UPPER_x", "wks-upper-x"],
+      ["  wks-plain  ", "wks-plain"],
+      ["___", ""],
+    ] as const) {
+      const suffix = buttonIdSuffix(workspaceId);
+      expect(suffix).toBe(expected);
+      expect(`advance-theme-switcher-${suffix}`).toMatch(buttonIdPattern);
+    }
   });
 });
 

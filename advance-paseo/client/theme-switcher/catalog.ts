@@ -55,6 +55,16 @@ export interface AppThemePreference {
   readonly pluginThemeId: string | null;
 }
 
+/** Plugin button ids must match /^[a-z][a-z0-9-]*$/ (validated by the host),
+ * but workspace ids look like "wks_ca0cd12d5de8c6d0" — underscores and any
+ * other run of invalid characters collapses into a dash. */
+export function buttonIdSuffix(workspaceId: string): string {
+  return workspaceId
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export function isActiveBuiltin(
   option: BuiltinThemeOption,
   preference: AppThemePreference | null,
