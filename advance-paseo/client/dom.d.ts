@@ -164,11 +164,14 @@ declare const document: {
   ): void;
 };
 
-/** Read-only computed-style fields the settings-card fingerprint reads. */
+/** Read-only computed-style fields the settings-card fingerprint and the
+ * transitional-surface rescue read. */
 interface AdvanceComputedStyle {
   readonly backgroundColor: string;
   readonly borderRadius: string;
   readonly borderTopWidth: string;
+  readonly position: string;
+  readonly zIndex: string;
 }
 
 declare const window: {

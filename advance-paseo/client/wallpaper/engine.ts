@@ -341,6 +341,13 @@ export function installWallpaperEngine(
       update();
       return;
     }
+    // Route transitions can be multi-commit: the decorated view leaves one
+    // commit before the next view's anchors mount, and bootstrap boundaries
+    // may mount an anchor-less full-bleed splash in between. Those frames
+    // would paint the theme's opaque surface — the flash users see when
+    // opening settings. Rescue the transitional surfaces here, before
+    // paint; the debounced full update reconciles once real anchors land.
+    rescueTransitionalSurfaces(records, instance.decorated);
     schedule(UPDATE_DEBOUNCE_MS);
   });
   observeRoot();
@@ -443,6 +450,71 @@ function batchAddsSurfaceAnchor(records: readonly MutationRecord[]): boolean {
     }
   }
   return false;
+}
+
+/** Did the batch remove a subtree containing a known surface anchor? */
+function batchRemovesSurfaceAnchor(records: readonly MutationRecord[]): boolean {
+  for (const record of records) {
+    for (const node of record.removedNodes) {
+      if (!(node instanceof HTMLElement)) continue;
+      if (node.matches(SYNC_RESCUE_ANCHORS)) return true;
+      if (node.querySelector(SYNC_RESCUE_ANCHORS) !== null) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Paint transitional surfaces before the browser renders them. Two shapes:
+ * the persistent container left behind when a decorated view unmounts
+ * (multi-commit route swaps), and freshly mounted anchor-less full-bleed
+ * containers (bootstrap splash screens). Both would otherwise flash the
+ * theme's opaque surface for the frames between the old view leaving and
+ * the new view's anchors arriving.
+ *
+ * Marks are transient by construction: the next full update() clears every
+ * decoration and re-applies only the real per-view surfaces, so a rescued
+ * container never stays painted. Overlays are excluded via position/z-index
+ * so dialogs and menus are never wallpapered by mistake.
+ */
+function rescueTransitionalSurfaces(
+  records: readonly MutationRecord[],
+  decorated: Set<HTMLElement>,
+): void {
+  const viewportWidth = Math.max(1, window.innerWidth);
+  const viewportHeight = Math.max(1, window.innerHeight);
+
+  const rescue = (candidate: HTMLElement, walkAncestors: boolean): void => {
+    let element: HTMLElement | null = candidate;
+    while (element !== null && element !== document.body) {
+      if (decorated.has(element)) return;
+      // An ancestor that already paints the image makes this redundant.
+      if (element.parentElement?.closest(`[${CHAT_SURFACE_ATTRIBUTE}]`) !== null) return;
+      const rect = element.getBoundingClientRect();
+      if (rect.width >= viewportWidth * 0.9 && rect.height >= viewportHeight * 0.9) {
+        const style = window.getComputedStyle(element);
+        const isOverlay = style.position === "fixed" || style.zIndex !== "auto";
+        const color = parseRgba(style.backgroundColor);
+        if (!isOverlay && color !== null && color[3] >= 0.95) {
+          element.setAttribute(CHAT_SURFACE_ATTRIBUTE, "");
+          decorated.add(element);
+          return;
+        }
+      }
+      if (!walkAncestors) return;
+      element = element.parentElement;
+    }
+  };
+
+  for (const record of records) {
+    for (const node of record.addedNodes) {
+      if (node instanceof HTMLElement) rescue(node, false);
+    }
+    if (batchRemovesSurfaceAnchor([record])) {
+      const target = record.target;
+      if (target instanceof HTMLElement) rescue(target, true);
+    }
+  }
 }
 
 /** Sample the painted surfaces once; both strategies share this pass. */
