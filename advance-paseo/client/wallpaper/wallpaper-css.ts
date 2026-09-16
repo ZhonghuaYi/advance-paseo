@@ -1,6 +1,16 @@
-// Builds the wallpaper enhancement stylesheet from the neutral tints and the
-// user's style options. Extracted from the engine so the controller stays
-// small and the visual rules can be unit-tested.
+// Builds the wallpaper stylesheet from the neutral tints and the user's
+// style options. Extracted from the engine so the controller stays small
+// and the visual rules can be unit-tested.
+//
+// Architecture: the wallpaper paints ONCE as a base coat on <html> (the
+// canvas background — it never unmounts, so no view transition can flash
+// it away). The host resolves every full-bleed surface color through CSS
+// variables (react-native-unistyles CSSVars mode), so the surface0 /
+// surface-sidebar / surface-workspace variables are redirected to
+// transparent while the wallpaper is active: every screen — present and
+// future — shows the base coat without any per-element discovery. Glass
+// refinement (backdrop-filter + translucent tints) is layered on specific
+// surfaces by runtime marking; it now samples the base coat directly.
 
 import {
   ACCENT_HEXES,
@@ -16,17 +26,13 @@ import {
 import { BLUR_RANGE, SCRIM_RANGE } from "../../shared/wallpaper";
 
 // Attribute and custom-property names shared with the runtime controller.
-export const LAYER_ID = "paseo-advance-wallpaper";
 export const STYLE_ID = "paseo-advance-wallpaper-style";
 export const ROOT_ATTRIBUTE = "data-paseo-advance-wallpaper";
 export const CLEANUP_PROPERTY = "__paseoAdvanceCleanup";
 export const IMAGE_PROPERTY = "--paseo-advance-wallpaper-image";
-export const CHAT_SURFACE_ATTRIBUTE = "data-paseo-advance-chat-surface";
-export const CHAT_CLEAR_ATTRIBUTE = "data-paseo-advance-chat-clear";
 export const WORKSPACE_SIDEBAR_ATTRIBUTE = "data-paseo-advance-workspace-sidebar";
 export const RIGHT_SIDEBAR_ATTRIBUTE = "data-paseo-advance-right-sidebar";
 export const WORKSPACE_TABS_ATTRIBUTE = "data-paseo-advance-workspace-tabs";
-export const SETTINGS_SURFACE_ATTRIBUTE = "data-paseo-advance-settings-surface";
 export const SETTINGS_SIDEBAR_ATTRIBUTE = "data-paseo-advance-settings-sidebar";
 /** Set by the engine on host settings cards found by their visual fingerprint. */
 export const SETTINGS_CARD_ATTRIBUTE = "data-paseo-advance-settings-card";
@@ -66,69 +72,69 @@ export function buildWallpaperCss(options: WallpaperStyleOptions): string {
   const darkAccent = accentRgb(options, "dark");
   const cardTint = CARD_TINTS[options.accent];
 
+  // The base coat carries the scrim that keeps text readable over arbitrary
+  // images; the slider scales it exactly like the old chat surfaces did.
   const chatScrimLight = rgbaString(LIGHT_BACKGROUND, scaledAlpha(0.72, scrim));
   const chatScrimDark = rgbaString(DARK_BACKGROUND, scaledAlpha(0.74, scrim));
   const sidebarTintLight = rgbaString([255, 255, 255], scaledAlpha(0.28, scrim));
   const sidebarTintDark = rgbaString(DARK_BACKGROUND, scaledAlpha(0.3, scrim));
-  const sidebarVeilLight = rgbaString(LIGHT_BACKGROUND, scaledAlpha(0.42, scrim));
-  const sidebarVeilDark = rgbaString(DARK_BACKGROUND, scaledAlpha(0.4, scrim));
   const sidebarFillLight = rgbaString([255, 255, 255], scaledAlpha(0.24, scrim));
   const sidebarFillDark = rgbaString(DARK_BACKGROUND, scaledAlpha(0.28, scrim));
   const tabsTintLight = rgbaString([255, 255, 255], scaledAlpha(0.42, scrim));
   const tabsTintDark = rgbaString(WALLPAPER_TINTS.darkTabs, scaledAlpha(0.46, scrim));
-  const fileScrimLight = rgbaString(LIGHT_BACKGROUND, scaledAlpha(0.72, scrim));
-  const fileScrimDark = rgbaString(DARK_BACKGROUND, scaledAlpha(0.74, scrim));
 
   const imageLayer = (color: string) => `linear-gradient(${color}, ${color})`;
+  const sidebarSelector = `[${WORKSPACE_SIDEBAR_ATTRIBUTE}],\n  [${RIGHT_SIDEBAR_ATTRIBUTE}],\n  [${SETTINGS_SIDEBAR_ATTRIBUTE}]`;
 
   return `
-/* This hidden node owns cleanup state; the selected content surfaces paint the image. */
-#${LAYER_ID} {
-  display: none !important;
-}
-
-/* The two identical color stops create one uniform scrim, not a directional mask. */
-html[${ROOT_ATTRIBUTE}="light"] [${CHAT_SURFACE_ATTRIBUTE}] {
+/* Base coat: the wallpaper and its scrim paint once on the canvas (<html>).
+ * The canvas background can never unmount, so view switches — including
+ * multi-commit route swaps and bootstrap splash frames — cannot flash it
+ * away. */
+html[${ROOT_ATTRIBUTE}="light"] {
+  background-color: ${rgbaString(LIGHT_BACKGROUND, 1)};
   background-image:
     ${imageLayer(chatScrimLight)},
-    var(${IMAGE_PROPERTY}) !important;
-  background-position: center !important;
-  background-repeat: no-repeat !important;
-  background-size: cover !important;
+    var(${IMAGE_PROPERTY});
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
 }
 
-html[${ROOT_ATTRIBUTE}="dark"] [${CHAT_SURFACE_ATTRIBUTE}] {
+html[${ROOT_ATTRIBUTE}="dark"] {
+  background-color: ${rgbaString(DARK_BACKGROUND, 1)};
   background-image:
     ${imageLayer(chatScrimDark)},
-    var(${IMAGE_PROPERTY}) !important;
-  background-position: center !important;
-  background-repeat: no-repeat !important;
-  background-size: cover !important;
+    var(${IMAGE_PROPERTY});
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+/* The static body anti-flash color must never cover the canvas. */
+html[${ROOT_ATTRIBUTE}] body {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Blanket transparency. The host compiles every themed surface color into a
+ * var(--colors-*) reference (react-native-unistyles CSSVars mode), so
+ * redirecting the three full-bleed surface variables shows the base coat on
+ * every screen without discovering individual elements. Elevated surfaces —
+ * cards, menus, popovers (surface1/surface2/popover) — keep their opaque
+ * theme colors for readability. */
+html[${ROOT_ATTRIBUTE}] {
+  --colors-surface0: transparent !important;
+  --colors-surface-sidebar: transparent !important;
+  --colors-surface-workspace: transparent !important;
 }
 
 @media (min-width: 721px) {
-  /* The stream and composer are siblings. Clear only their ancestor paths so
-   * their nearest shared container can paint one continuous illustration. */
-  html[${ROOT_ATTRIBUTE}] [${CHAT_CLEAR_ATTRIBUTE}] {
-    background-color: transparent !important;
-    background-image: none !important;
-  }
-
-  /* Desktop chrome uses the same glass language as the chat. The left
-   * workspace list, the right explorer dock, and the settings screen's own
-   * sidebar are marked at runtime because their outer React Native Web
-   * wrappers do not have stable class names. Each shell owns a faint copy of
-   * the wallpaper. Paseo's native sidebar surface is opaque, so
-   * backdrop-filter alone would otherwise have nothing textured to blur. */
-  html[${ROOT_ATTRIBUTE}] [${WORKSPACE_SIDEBAR_ATTRIBUTE}],
-  html[${ROOT_ATTRIBUTE}] [${WORKSPACE_SIDEBAR_ATTRIBUTE}] > div,
-  html[${ROOT_ATTRIBUTE}] [${RIGHT_SIDEBAR_ATTRIBUTE}],
-  html[${ROOT_ATTRIBUTE}] [${RIGHT_SIDEBAR_ATTRIBUTE}] > div,
-  html[${ROOT_ATTRIBUTE}] [${SETTINGS_SIDEBAR_ATTRIBUTE}],
-  html[${ROOT_ATTRIBUTE}] [${SETTINGS_SIDEBAR_ATTRIBUTE}] > div {
+  /* Desktop chrome glass: the marked sidebars keep their identity with a
+   * translucent tint and backdrop blur that now samples the base coat. */
+  html[${ROOT_ATTRIBUTE}] ${sidebarSelector} {
 ${sidebarGlass}
     background-clip: padding-box !important;
-    background-color: inherit !important;
     isolation: isolate;
   }
 
@@ -136,12 +142,6 @@ ${sidebarGlass}
   html[${ROOT_ATTRIBUTE}="light"] [${RIGHT_SIDEBAR_ATTRIBUTE}],
   html[${ROOT_ATTRIBUTE}="light"] [${SETTINGS_SIDEBAR_ATTRIBUTE}] {
     background-color: ${sidebarTintLight} !important;
-    background-image:
-      ${imageLayer(sidebarVeilLight)},
-      var(${IMAGE_PROPERTY}) !important;
-    background-position: center !important;
-    background-repeat: no-repeat !important;
-    background-size: cover !important;
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.78),
       0 10px 32px rgba(58, 60, 66, 0.16);
@@ -151,12 +151,6 @@ ${sidebarGlass}
   html[${ROOT_ATTRIBUTE}="dark"] [${RIGHT_SIDEBAR_ATTRIBUTE}],
   html[${ROOT_ATTRIBUTE}="dark"] [${SETTINGS_SIDEBAR_ATTRIBUTE}] {
     background-color: ${sidebarTintDark} !important;
-    background-image:
-      ${imageLayer(sidebarVeilDark)},
-      var(${IMAGE_PROPERTY}) !important;
-    background-position: center !important;
-    background-repeat: no-repeat !important;
-    background-size: cover !important;
     box-shadow:
       inset 0 1px 0 ${rgbaString(DARK_RING, 0.11)},
       0 10px 32px rgba(0, 0, 0, 0.30);
@@ -211,33 +205,9 @@ ${tabsGlass}
     box-shadow: inset 0 1px 0 ${rgbaString(DARK_RING, 0.09)};
   }
 
-  /* Every settings detail pane — whichever page is active — is a base surface
-   * like the chat: the wallpaper plus the chat-grade scrim. The host's scroll
-   * and content wrappers are transparent, so the image shows through on all
-   * settings pages; the engine additionally clears this plugin's own screen
-   * wrappers and marks card-shaped host containers for the glass below. */
-  html[${ROOT_ATTRIBUTE}="light"] [${SETTINGS_SURFACE_ATTRIBUTE}] {
-    background-image:
-      ${imageLayer(chatScrimLight)},
-      var(${IMAGE_PROPERTY}) !important;
-    background-position: center !important;
-    background-repeat: no-repeat !important;
-    background-size: cover !important;
-  }
-
-  html[${ROOT_ATTRIBUTE}="dark"] [${SETTINGS_SURFACE_ATTRIBUTE}] {
-    background-image:
-      ${imageLayer(chatScrimDark)},
-      var(${IMAGE_PROPERTY}) !important;
-    background-position: center !important;
-    background-repeat: no-repeat !important;
-    background-size: cover !important;
-  }
-
   /* Settings cards — our own (by testID) and host pages' (marked by the
    * engine from their card fingerprint) — carry the same sheet glass as the
-   * composer and user messages so the whole settings experience shares the
-   * chat's frosted look. */
+   * composer and user messages. */
   html[${ROOT_ATTRIBUTE}] [data-testid="${SETTINGS_CARD_TEST_ID}"],
   html[${ROOT_ATTRIBUTE}] [${SETTINGS_CARD_ATTRIBUTE}] {
 ${sheetGlass}
@@ -266,8 +236,9 @@ ${sheetGlass}
   }
 
   /* User-authored history and the real composer card use the same restrained
-   * glass treatment. AI responses and the composer's outer layout stay clear.
-   * The message border follows the user's chosen accent family. */
+   * glass treatment. AI responses and the composer's outer layout stay
+   * translucent to the base coat. The message border follows the user's
+   * chosen accent family. */
   html[${ROOT_ATTRIBUTE}] [data-testid="user-message"] > :first-child > :first-child,
   html[${ROOT_ATTRIBUTE}] [data-testid="message-input-root"] > div:has(
       [data-composer-input],
@@ -328,9 +299,7 @@ ${sheetGlass}
   }
 
   /* Fenced Markdown blocks in the chat keep their syntax colors, but the
-   * opaque surface becomes a translucent sheet over the continuous wallpaper.
-   * The data-pmono fallback also covers older Paseo builds without the newer
-   * markdown tag marker. */
+   * opaque surface becomes a translucent sheet over the base coat. */
   html[${ROOT_ATTRIBUTE}] [data-testid="assistant-message"]
     [data-paseo-markdown-tag="pre"],
   html[${ROOT_ATTRIBUTE}] [data-testid="assistant-message"] div[data-pmono] {
@@ -361,36 +330,9 @@ ${codeGlass}
       0 8px 22px rgba(0, 0, 0, 0.24);
   }
 
-  /* CodeMirror normally paints an opaque editor and gutter. Only those two
-   * layers are cleared, leaving the rest of the file pane unchanged. A
-   * selected Markdown preview paints on its file-pane root because Paseo's
-   * preview renderer intentionally has no dedicated DOM identifier. */
-  html[${ROOT_ATTRIBUTE}="light"] [data-testid="file-source-editor"],
-  html[${ROOT_ATTRIBUTE}="light"]
-    [data-testid="workspace-file-pane"]:has(
-      [data-testid="file-mode-preview"][aria-selected="true"]
-    ) {
-    background-image:
-      ${imageLayer(fileScrimLight)},
-      var(${IMAGE_PROPERTY}) !important;
-    background-position: center !important;
-    background-repeat: no-repeat !important;
-    background-size: cover !important;
-  }
-
-  html[${ROOT_ATTRIBUTE}="dark"] [data-testid="file-source-editor"],
-  html[${ROOT_ATTRIBUTE}="dark"]
-    [data-testid="workspace-file-pane"]:has(
-      [data-testid="file-mode-preview"][aria-selected="true"]
-    ) {
-    background-image:
-      ${imageLayer(fileScrimDark)},
-      var(${IMAGE_PROPERTY}) !important;
-    background-position: center !important;
-    background-repeat: no-repeat !important;
-    background-size: cover !important;
-  }
-
+  /* CodeMirror paints its editor and gutter with literal colors outside the
+   * theme variables; only those layers are cleared so the base coat shows
+   * through the file editor. */
   html[${ROOT_ATTRIBUTE}] [data-testid="file-source-editor"] .cm-editor,
   html[${ROOT_ATTRIBUTE}] [data-testid="file-source-editor"] .cm-scroller,
   html[${ROOT_ATTRIBUTE}] [data-testid="file-source-editor"] .cm-content,
@@ -453,13 +395,6 @@ ${codeGlass}
   html[${ROOT_ATTRIBUTE}="dark"] [data-testid="terminal-surface"]::after {
     opacity: 0.20;
     mix-blend-mode: screen;
-  }
-}
-
-/* Compact layouts keep Paseo's original opaque surfaces. */
-@media (max-width: 720px) {
-  html[${ROOT_ATTRIBUTE}] [${CHAT_SURFACE_ATTRIBUTE}] {
-    background-image: none !important;
   }
 }
 `;

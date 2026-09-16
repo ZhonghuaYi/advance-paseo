@@ -6,6 +6,7 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { AdvanceSettingsScreen } from "./client/settings-screen";
 import { contributeI18n } from "./client/i18n/contribute";
+import { contributeLiveChat } from "./client/live-chat/contribute";
 import { contributeProvidersAutoRefresh } from "./client/providers/contribute";
 import { contributeThemeSwitcher } from "./client/theme-switcher/contribute";
 import { contributeWallpaper } from "./client/wallpaper/contribute";
@@ -19,6 +20,7 @@ export default function contribute(client: PluginClientContext) {
     contributeWallpaper(client),
     contributeProvidersAutoRefresh(client),
     contributeThemeSwitcher(client),
+    contributeLiveChat(client),
   ];
 
   client.addSettingsScreen({

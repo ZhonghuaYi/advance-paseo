@@ -1,7 +1,9 @@
 // Resolves the active wallpaper settings into image data URLs. Used by the
 // client entry wiring (daemon-backed reader built from client.rpc) and by the
 // settings screen (reader built from useRpc handles), so failures degrade to
-// "no wallpaper" instead of breaking either path.
+// "no wallpaper" instead of breaking either path. A failed configured slot is
+// reported through `failed` so the entry wiring can retry the read instead of
+// silently leaving the engine imageless until the settings screen is opened.
 
 import {
   wallpaperReadPathRpc,
@@ -30,13 +32,24 @@ async function readSource(
   }
 }
 
+export interface WallpaperResolution {
+  readonly images: WallpaperImages;
+  /** True when a configured slot failed to load (unset slots never count). */
+  readonly failed: boolean;
+}
+
 export async function resolveWallpaperImagesWith(
   reader: WallpaperReader,
   settings: WallpaperSettings,
-): Promise<WallpaperImages> {
+): Promise<WallpaperResolution> {
   const [light, dark] = await Promise.all([
     readSource(reader, settings.light),
     readSource(reader, settings.dark),
   ]);
-  return { light, dark };
+  return {
+    images: { light, dark },
+    failed:
+      (settings.light !== null && light === null) ||
+      (settings.dark !== null && dark === null),
+  };
 }

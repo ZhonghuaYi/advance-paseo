@@ -138,11 +138,17 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
   }, [valuesKey, settings.status]); // valuesKey captures the values
 
   // Preview images reload only when the picked slots change, not on style
-  // tweaks, to avoid re-transferring megabytes on every switch flip.
+  // tweaks, to avoid re-transferring megabytes on every switch flip. The
+  // resolved images also go straight to the engine: this backfills hosts
+  // where the entry-time init read failed or gave up, so merely opening the
+  // settings screen restores the wallpaper.
   useEffect(() => {
     if (settings.status !== "ready") return;
     void resolveWallpaperImagesWith(reader, settings.values)
-      .then(setPreviews)
+      .then((resolution) => {
+        setPreviews(resolution.images);
+        setWallpaperImages(resolution.images);
+      })
       .catch(() => setPreviews({ light: null, dark: null }));
   }, [slotsKey, settings.status, reader]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -191,9 +197,9 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
     setError(null);
     try {
       applyWallpaperState(engineStateOf(next));
-      const images = await resolveWallpaperImagesWith(reader, next);
-      setWallpaperImages(images);
-      setPreviews(images);
+      const resolution = await resolveWallpaperImagesWith(reader, next);
+      setWallpaperImages(resolution.images);
+      setPreviews(resolution.images);
       const saved = await settings.save(next, settings.revision);
       if (!saved) void settings.reload();
     } catch (commitError) {

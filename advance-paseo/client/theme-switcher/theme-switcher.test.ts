@@ -8,6 +8,7 @@ import {
 import {
   mergeAppSettingsTheme,
   parseAppThemePreference,
+  pickAppQueryClient,
 } from "./app-theme";
 import { buttonIdSuffix } from "./catalog";
 import { PALETTE_PAIRS } from "../wallpaper/palettes";
@@ -122,5 +123,53 @@ describe("app-settings preference plumbing", () => {
       theme: "zinc",
       pluginThemeId: null,
     });
+  });
+});
+
+describe("app query client resolution", () => {
+  /** Duck-typed react-query client; `document` pre-seeds the app-settings key. */
+  function fakeClient(document?: unknown) {
+    return {
+      queryCache: {},
+      getQueryData: (queryKey: readonly unknown[]) =>
+        queryKey[0] === "app-settings" ? document : undefined,
+      setQueryData: () => null,
+    };
+  }
+
+  it("prefers the foreign client whose cache holds the settings document", () => {
+    // Shallowest-first, as the fiber walk orders candidates: an unrelated
+    // provider, the app-level client (which has read app-settings), then the
+    // plugin's own client last.
+    const own = fakeClient();
+    const app = fakeClient({ theme: "auto", pluginThemeId: null });
+    const other = fakeClient();
+    expect(pickAppQueryClient([other, app, own], own)).toBe(app);
+  });
+
+  it("falls back to the shallowest foreign client when no cache holds it", () => {
+    const own = fakeClient();
+    const shallow = fakeClient();
+    const deep = fakeClient();
+    expect(pickAppQueryClient([shallow, deep, own], own)).toBe(shallow);
+  });
+
+  it("returns null when only the plugin's own client is present", () => {
+    const own = fakeClient();
+    expect(pickAppQueryClient([own], own)).toBeNull();
+    expect(pickAppQueryClient([], own)).toBeNull();
+  });
+
+  it("skips values that do not duck-type as query clients", () => {
+    const own = fakeClient();
+    const app = fakeClient({ theme: "dark", pluginThemeId: null });
+    expect(
+      pickAppQueryClient(
+        [null, undefined, "client", 42, { queryCache: null }, app, own],
+        own,
+      ),
+    ).toBe(app);
+    // A provider without both cache methods is not a usable target either.
+    expect(pickAppQueryClient([{ getQueryData: () => 1 }], {})).toBeNull();
   });
 });

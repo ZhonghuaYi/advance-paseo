@@ -10,6 +10,7 @@
 import { View } from "react-native";
 import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { LanguageSettingsSection } from "./i18n/settings-ui";
+import { LiveChatSettingsSection } from "./live-chat/settings-ui";
 import { ProvidersSettingsSection } from "./providers/settings-ui";
 import { WallpaperSettingsSection } from "./wallpaper/settings-ui";
 
@@ -21,6 +22,7 @@ export function AdvanceSettingsScreen(props: PluginSurfaceProps) {
       <LanguageSettingsSection {...props} />
       <WallpaperSettingsSection {...props} />
       <ProvidersSettingsSection {...props} />
+      <LiveChatSettingsSection {...props} />
     </View>
   );
 }

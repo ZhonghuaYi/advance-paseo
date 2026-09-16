@@ -1,73 +1,44 @@
-// Mode detection for the wallpaper engine. Two strategies share one sampling
-// pass over the rendered surfaces:
+// Wallpaper mode resolution from host theme signals.
 //
-// - Marker mode: scores computed background colors against the marker colors
-//   of this plugin's registered theme palettes. In "system" mode a marker hit
-//   means one of this plugin's own themes is active and the wallpaper turns
-//   off; an unrelated Paseo theme matches nothing.
-// - Luminance mode: area-weighted average of opaque background luminance
-//   decides light vs dark, so the wallpaper follows whichever built-in or
-//   third-party theme is active. Heuristic by nature; re-tune the threshold
-//   if Paseo's stock palettes change radically.
+// The host runs react-native-unistyles in CSSVars mode: the ACTIVE theme is
+// named by a class on <html> (light, dark, darkZinc, …, pluginLight,
+// pluginDark) or, in "auto" mode, by the OS color-scheme preference with no
+// class at all. Reading these signals is deterministic and instant — unlike
+// the previous approach of sampling painted surface colors, which the
+// wallpaper itself defeats (our variable overrides make those surfaces
+// transparent, so there is nothing left to sample).
 //
-// The classification functions are pure so they can be unit-tested; the DOM
-// sampling lives in the engine.
-
-import {
-  ALL_DARK_MARKERS,
-  ALL_LIGHT_MARKERS,
-  matchesMarker,
-  type Rgba,
-} from "./palettes";
-
-/** One observed opaque background, weighted by its share of the viewport. */
-export interface SurfaceSample {
-  readonly color: Rgba;
-  readonly weight: number;
-}
+// The resolution is pure so it can be unit-tested; the DOM reading lives in
+// the engine.
 
 export type WallpaperMode = "light" | "dark";
+export type WallpaperStrategy = "system" | "all";
 
-/** WCAG relative luminance of an sRGB color, alpha ignored. */
-export function relativeLuminance(color: Rgba): number {
-  const channel = (raw: number): number => {
-    const scaled = raw / 255;
-    return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
-  };
-  const red = channel(color[0]);
-  const green = channel(color[1]);
-  const blue = channel(color[2]);
-  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+/** Theme signals read from the document, pre-normalized. */
+export interface HostThemeSignals {
+  /** Set when a plugin-contributed theme is active (pluginLight/pluginDark). */
+  readonly pluginTheme: WallpaperMode | null;
+  /** Set when a built-in theme class names the palette family. */
+  readonly builtinTheme: WallpaperMode | null;
+  /** OS preference, consulted only when no theme class is present ("auto"). */
+  readonly prefersDark: boolean;
 }
 
-/** Marker strategy: which plugin palette family is currently painted. */
-export function classifyMarkerMode(
-  samples: readonly SurfaceSample[],
+/**
+ * Which wallpaper slot may paint, or null for "off".
+ *
+ * - "system": the wallpaper paints on built-in themes only; selecting one of
+ *   this plugin's own (or any plugin's) themes means the user chose a plain
+ *   color palette and the wallpaper turns off.
+ * - "all": paints over every theme, following its light/dark family.
+ */
+export function resolveWallpaperMode(
+  signals: HostThemeSignals,
+  strategy: WallpaperStrategy,
 ): WallpaperMode | null {
-  let lightScore = 0;
-  let darkScore = 0;
-  for (const sample of samples) {
-    if (matchesMarker(sample.color, ALL_LIGHT_MARKERS)) lightScore += sample.weight;
-    if (matchesMarker(sample.color, ALL_DARK_MARKERS)) darkScore += sample.weight;
+  if (signals.pluginTheme !== null) {
+    return strategy === "system" ? null : signals.pluginTheme;
   }
-  if (lightScore === 0 && darkScore === 0) return null;
-  return darkScore > lightScore ? "dark" : "light";
-}
-
-/** Opaque-enough backgrounds only; translucent panels would skew the average. */
-const LUMINANCE_ALPHA_FLOOR = 0.9;
-
-/** Luminance strategy: average interface brightness decides the mode. */
-export function classifyLuminanceMode(
-  samples: readonly SurfaceSample[],
-): WallpaperMode | null {
-  let totalWeight = 0;
-  let weighted = 0;
-  for (const sample of samples) {
-    if (sample.color[3] < LUMINANCE_ALPHA_FLOOR) continue;
-    totalWeight += sample.weight;
-    weighted += relativeLuminance(sample.color) * sample.weight;
-  }
-  if (totalWeight === 0) return null;
-  return weighted / totalWeight >= 0.5 ? "light" : "dark";
+  if (signals.builtinTheme !== null) return signals.builtinTheme;
+  return signals.prefersDark ? "dark" : "light";
 }

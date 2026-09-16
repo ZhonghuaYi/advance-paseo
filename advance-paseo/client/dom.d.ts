@@ -1,13 +1,14 @@
 // Typecheck-only ambient DOM surface for the web wallpaper enhancement.
 // Paseo plugins compile without the DOM library, so declare exactly what
-// client/wallpaper/engine.ts and client/web.ts touch. Every runtime entry
-// point guards on `typeof document === "undefined"` (or Blob/URL/atob/File
-// presence), which keeps native hosts on the no-op path. This file ships no
-// runtime code; the Paseo bundler never reaches it.
+// client/wallpaper/engine.ts, client/live-chat/engine.ts, and client/web.ts
+// touch. Every runtime entry point guards on `typeof document ===
+// "undefined"` (or Blob/URL/atob/File presence), which keeps native hosts on
+// the no-op path. This file ships no runtime code; the Paseo bundler never
+// reaches it.
 
 interface AdvanceCssStyleDeclaration {
   setProperty(name: string, value: string): void;
-  removeProperty(name: string): void;
+  removeProperty(name: string, value?: string): void;
 }
 
 interface AdvanceDomRect {
@@ -26,6 +27,8 @@ interface AdvanceMutationObserverInit {
 interface Element {
   id: string;
   textContent: string | null;
+  /** True while the node is attached to the document (engine self-heal). */
+  readonly isConnected: boolean;
   setAttribute(name: string, value: string): void;
   getAttribute(name: string): string | null;
   hasAttribute(name: string): boolean;
@@ -40,6 +43,10 @@ interface Element {
   getBoundingClientRect(): AdvanceDomRect;
   readonly parentElement: HTMLElement | null;
   readonly children: HTMLElement[];
+  addEventListener(type: string, listener: () => void): void;
+  removeEventListener(type: string, listener: () => void): void;
+  /** Theme detection reads the host's active-theme class on <html>. */
+  readonly classList: { contains(token: string): boolean };
 }
 
 interface HTMLElement extends Element {
@@ -56,6 +63,7 @@ interface KeyboardEvent {
 interface MutationRecord {
   readonly type: string;
   readonly target: Element;
+  readonly attributeName: string | null;
   readonly addedNodes: readonly unknown[];
   readonly removedNodes: readonly unknown[];
 }
@@ -144,6 +152,7 @@ interface AdvanceEventLike {
 declare const document: {
   getElementById(id: string): HTMLElement | null;
   querySelector(selector: string): HTMLElement | null;
+  querySelectorAll<T extends Element = Element>(selector: string): T[];
   readonly documentElement: HTMLElement;
   readonly head: Element;
   readonly body: Element;
@@ -165,21 +174,31 @@ declare const document: {
 };
 
 /** Read-only computed-style fields the settings-card fingerprint and the
- * transitional-surface rescue read. */
+ * capability gate read. */
 interface AdvanceComputedStyle {
   readonly backgroundColor: string;
   readonly borderRadius: string;
   readonly borderTopWidth: string;
   readonly position: string;
   readonly zIndex: string;
+  getPropertyValue(propertyName: string): string;
+}
+
+interface AdvanceMediaQueryList {
+  readonly matches: boolean;
+  addEventListener(type: "change", listener: () => void): void;
+  removeEventListener(type: "change", listener: () => void): void;
 }
 
 declare const window: {
   setTimeout(handler: () => void, timeout: number): number;
   clearTimeout(id: number): void;
+  setInterval(handler: () => void, timeout: number): number;
+  clearInterval(id: number): void;
   readonly innerWidth: number;
   readonly innerHeight: number;
   getComputedStyle(element: Element): AdvanceComputedStyle;
+  matchMedia(query: string): AdvanceMediaQueryList;
   addEventListener(type: string, listener: () => void): void;
   removeEventListener(type: string, listener: () => void): void;
 };

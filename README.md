@@ -1,9 +1,10 @@
 # advance-paseo
 
 A Paseo plugin that bundles incremental enhancements for the Paseo app —
-arbitrary wallpapers, automatic provider-catalog refresh, and a Chinese /
-English interface — built as a feature-module system so new capabilities slot
-in without touching existing ones.
+arbitrary wallpapers, automatic provider-catalog refresh, a Chinese /
+English interface, and live chat overlays (a floating TODO card with the
+current plan plus a tokens/sec meter) — built as a feature-module system so
+new capabilities slot in without touching existing ones.
 
 成功安装并启用后，请在 Paseo 的 **Settings → Plugins → Advance Paseo** 中配置各功能。
 
@@ -29,16 +30,20 @@ its own neutral theme pair — *Advance Cream* (light) / *Advance Indigo*
   `~/.paseo/advance-paseo/wallpapers/`. Assign one image per light/dark slot.
 - **Path reference**: alternatively point a slot at an image file on the
   daemon machine (read as-is, no copy).
-- **Painted surfaces**: chat history + composer, workspace and settings
-  sidebars, the settings detail pane (on **every** settings page, with
-  card-shaped containers frosted the same way), message cards, code blocks,
-  terminals, and diffs — all carrying the same frosted-glass language.
+- **Painted surfaces**: the wallpaper paints once behind the whole app (a
+  base coat on the html canvas) and shows on every screen — chat, workspace,
+  settings (all pages), new-workspace, and future views — because the host's
+  full-bleed surface colors are redirected to transparent at the CSS-variable
+  level. Frosted-glass refinement (backdrop blur + translucent tints) is
+  layered on the sidebars, tab strip, settings cards, message cards, code
+  blocks, terminals, and diffs.
 - **Activation modes**:
   - *System themes only* (default) — the wallpaper paints while a built-in
     Paseo theme is active and turns off when one of this plugin's own themes
     (Advance Cream / Advance Indigo) is selected.
   - *All themes* — paints over every theme.
-  - Both pick the light/dark slot from the detected interface luminance.
+  - Both resolve the light/dark slot from the host's active-theme class on
+    `<html>` (deterministic; no color sampling).
 - Style options: scrim strength (50–150%) and glass blur (0–40 px) adjusted
   with drag sliders that preview live and persist on release (the host UI kit
   ships no slider, so `client/ui/slider-row.tsx` builds one from React Native
@@ -47,11 +52,18 @@ its own neutral theme pair — *Advance Cream* (light) / *Advance Indigo*
   to the documented ranges in the settings schema; documents stored by the
   original three-step presets migrate automatically.
 
-> Mechanism note: Paseo's theme API is colors-only, so the wallpaper is a
-> DOM-injection enhancement layered on top of the registered color themes
-> (inherited from paseo-miku-theme). It degrades gracefully: if Paseo's
-> internal DOM changes, the plugin falls back to the plain color themes. Do
-> not run this together with `miku-future` — both inject glass styling.
+> Mechanism note: Paseo's theme API is colors-only and offers no background,
+> CSS, or layer capability, so the wallpaper is a DOM-injection enhancement.
+> It rides on the host's own CSS-variable theming (react-native-unistyles
+> CSSVars mode): the wallpaper paints as the canvas background on `<html>`,
+> and the `--colors-surface0/-sidebar/-workspace` variables are redirected to
+> transparent while the wallpaper is active, so every screen shows it without
+> per-element DOM discovery — nothing a view switch does can cover or flash
+> it. If the host stops exposing those variables, the engine stays dormant
+> and the plain color themes keep working. Elevated surfaces (menus,
+> popovers, cards) keep their opaque theme colors for readability. Known
+> trade-off: modal backdrops that dim via `surface0` stop dimming while the
+> wallpaper is active.
 
 ### Theme switcher（主题切换）
 
@@ -80,6 +92,33 @@ files and triggers `paseo.providers.refresh()` whenever one actually changes.
   collapsed by a configurable quiet period.
 - A status card shows armed state, watched-file existence, and the last
   change/refresh/error, plus a manual "refresh now" action.
+
+### Live chat overlays（聊天实时浮层）
+
+Two floating overlays injected over each visible conversation (desktop/web;
+mobile keeps native surfaces):
+
+- **TODO card** — pinned to the chat viewport's top-right corner, showing the
+  active agent's latest todo list (status dots: pending / in-progress /
+  completed, with a done-count header and click-to-collapse). When the agent
+  presented a plan, the card carries it as a **GOAL** section. Rows are capped
+  by a settings-controlled limit with a `+N more` row.
+- **Chat text shift** — while the card is visible, the chat column's content
+  is padded right by a configurable amount (0–360 px, default 200), moving
+  the centered message text left so it never renders under the card. The
+  shift applies only to panes showing a card and disappears with it.
+- **Tokens/sec meter** — a small frosted pill at the conversation's bottom
+  right showing live output tokens/sec (12 s sliding window over
+  `usage_updated` events), the turn's output count, and context-window
+  pressure; the final reading freezes after each turn until the next begins.
+- Each pane tracks its own agent: the active tab's test id
+  (`workspace-tab-agent_<id>` with `aria-selected`) resolves the binding, a
+  single-agent pane binds without the aria signal, and a pane keeps its last
+  agent in focus mode. Data comes from a per-agent timeline subscription
+  (latest `todo` item, latest plan tool call, usage events) plus one tail
+  history fetch per binding; seq numbers keep stale history from overwriting
+  live updates. Card colors follow the detected light/dark paint under each
+  chat, including wallpaper-frosted shells.
 
 ## Install
 
@@ -114,6 +153,8 @@ advance-paseo/              ← the installable plugin directory
     ui/                     ← shared plugin-local widgets (slider row)
     i18n/                   ← dictionaries (en/zh), language store, language UI
     wallpaper/              ← engine, css builder, palettes, detection, UI
+    live-chat/              ← floating TODO card + tokens/sec meter (model,
+                              engine, settings UI)
     providers/              ← watcher status UI
   server/                   ← daemon-side code (full Node access)
     wallpaper-store.ts      ← image storage under ~/.paseo/advance-paseo/
@@ -122,6 +163,7 @@ advance-paseo/              ← the installable plugin directory
   shared/                   ← Zod contracts imported by both runtimes
     wallpaper.ts            ← settings schema + wallpaper RPCs
     providers.ts            ← settings schema + watcher RPCs
+    live-chat.ts            ← settings schema (overlays are client-only)
 ```
 
 ## Adding a feature module

@@ -5,12 +5,14 @@ import { registerProvidersWatcher } from "./server/providers-watch";
 import { registerWallpaperStore } from "./server/wallpaper-store";
 import { providersSettings } from "./shared/providers";
 import { languageSettings } from "./shared/i18n";
+import { liveChatSettings } from "./shared/live-chat";
 import { wallpaperSettings } from "./shared/wallpaper";
 
 export default function contribute(server: PluginServerContext) {
   server.registerSettings(wallpaperSettings);
   server.registerSettings(providersSettings);
   server.registerSettings(languageSettings);
+  server.registerSettings(liveChatSettings);
 
   const disposeWallpaper = registerWallpaperStore(server);
   const disposeProviders = registerProvidersWatcher(server);

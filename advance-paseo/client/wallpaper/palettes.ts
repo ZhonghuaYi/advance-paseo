@@ -1,13 +1,12 @@
 // Single source of truth for the wallpaper feature's palettes and visual
-// mappings. index.client.ts registers the theme contributions, the CSS
-// builder derives every scrim, border, and blur value from here, and the mode
-// detector derives its marker colors from here. Editing a color in one place
-// updates the theme, the visuals, and detection.
+// mappings. index.client.ts registers the theme contributions and the CSS
+// builder derives every scrim, border, and blur value from here. Editing a
+// color in one place updates the theme and the visuals.
 //
 // One palette pair ships: a neutral pair (warm cream / deep indigo) suited
-// to arbitrary wallpapers. Marker hues are deliberately distinctive so
-// unrelated Paseo themes do not accidentally trip the plugin-theme check in
-// "system" mode.
+// to arbitrary wallpapers. Mode detection no longer reads colors at all —
+// it resolves the active theme from the host's theme class on <html>
+// (see theme-detect.ts).
 
 import type { PluginThemeContribution } from "@getpaseo/plugin";
 import type { WallpaperSettings } from "../../shared/wallpaper";
@@ -39,8 +38,6 @@ export const INDIGO_DARK_COLORS = {
 export interface PalettePair {
   readonly light: PluginThemeContribution;
   readonly dark: PluginThemeContribution;
-  readonly lightMarkers: readonly Rgb[];
-  readonly darkMarkers: readonly Rgb[];
 }
 
 function theme(
@@ -55,27 +52,10 @@ function theme(
 export const NEUTRAL_PAIR: PalettePair = {
   light: theme("advance-cream", "Advance Cream", "light", CREAM_LIGHT_COLORS),
   dark: theme("advance-indigo", "Advance Indigo", "dark", INDIGO_DARK_COLORS),
-  lightMarkers: [
-    hexToRgb(CREAM_LIGHT_COLORS.background),
-    hexToRgb(CREAM_LIGHT_COLORS.control),
-  ],
-  darkMarkers: [
-    hexToRgb(INDIGO_DARK_COLORS.background),
-    hexToRgb(INDIGO_DARK_COLORS.raised),
-    hexToRgb(INDIGO_DARK_COLORS.control),
-  ],
 };
 
 /** Every palette pair registered as official color themes. */
 export const PALETTE_PAIRS: readonly PalettePair[] = [NEUTRAL_PAIR];
-
-/** Marker unions across every registered pair, for mode detection. */
-export const ALL_LIGHT_MARKERS: readonly Rgb[] = PALETTE_PAIRS.flatMap(
-  (pair) => pair.lightMarkers,
-);
-export const ALL_DARK_MARKERS: readonly Rgb[] = PALETTE_PAIRS.flatMap(
-  (pair) => pair.darkMarkers,
-);
 
 // Message-card accent families. "graphite" is the neutral default that suits
 // arbitrary wallpapers; the Miku families are carried over for continuity.
@@ -182,13 +162,3 @@ export function parseRgba(value: string): Rgba | null {
 }
 
 export type { Rgba };
-
-export function matchesMarker(color: Rgba, markers: readonly Rgb[]): boolean {
-  if (color[3] < 0.1) return false;
-  return markers.some(
-    ([red, green, blue]) =>
-      Math.abs(color[0] - red) <= 2 &&
-      Math.abs(color[1] - green) <= 2 &&
-      Math.abs(color[2] - blue) <= 2,
-  );
-}

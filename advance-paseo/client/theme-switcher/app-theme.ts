@@ -3,12 +3,19 @@
 // Paseo stores its appearance preference in localStorage under "app-settings"
 // and mirrors it into a react-query cache entry keyed ["app-settings"]; the
 // AppearanceProvider re-applies the theme whenever that cache entry changes.
-// The host injects its own react-query instance into plugin code, so a plugin
-// component rendered inside the app tree can update the cache exactly like
-// the app's own settings screen does: merge the patch into the current
-// document, write the cache, and persist the same object to localStorage.
-// This replicates the host's saveAppSettings (a shallow merge + same-key
-// write) rather than calling private internals.
+//
+// The cache write needs care: the host gives every plugin client its own
+// react-query instance and provides THAT to plugin surfaces, so
+// useQueryClient() inside plugin UI returns a client nobody but the plugin
+// observes — a patch written there never reaches the appearance provider
+// (it only lands in localStorage, applying after the next app launch). To
+// apply live, this module walks the rendered React fiber tree from the app
+// root and writes through the app-level QueryClientProvider instead: the
+// app's own provider sits near the root and its cache already holds the
+// settings document, so the shallowest provider that has read
+// ["app-settings"] is the one the appearance provider watches. When the walk
+// finds nothing (host layout change, native host), the write falls back to
+// the injected client and the change simply applies on the next launch.
 
 import type { AppThemePreference } from "./catalog";
 
@@ -19,6 +26,98 @@ const APP_SETTINGS_QUERY_KEY: readonly unknown[] = ["app-settings"];
 export interface AppSettingsQueryClient {
   getQueryData(queryKey: readonly unknown[]): unknown;
   setQueryData(queryKey: readonly unknown[], updater: unknown): unknown;
+}
+
+interface QueryClientLike {
+  getQueryData(queryKey: readonly unknown[]): unknown;
+  setQueryData(queryKey: readonly unknown[], updater: unknown): unknown;
+}
+
+function isQueryClientLike(value: unknown): value is QueryClientLike {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as {
+    queryCache?: unknown;
+    getQueryData?: unknown;
+    setQueryData?: unknown;
+  };
+  return (
+    typeof candidate.getQueryData === "function" &&
+    typeof candidate.setQueryData === "function" &&
+    typeof candidate.queryCache === "object" &&
+    candidate.queryCache !== null
+  );
+}
+
+/**
+ * Pick the client a theme patch should be written to. Candidates arrive
+ * shallowest-first from the fiber walk; the app-level client is preferred
+ * because its cache already holds the settings document the appearance
+ * provider watches. The plugin's own client (nobody observes it) is skipped.
+ */
+export function pickAppQueryClient(
+  candidates: readonly unknown[],
+  ownClient: unknown,
+): AppSettingsQueryClient | null {
+  const foreign = candidates.filter(
+    (candidate): candidate is QueryClientLike =>
+      isQueryClientLike(candidate) && candidate !== ownClient,
+  );
+  if (foreign.length === 0) return null;
+  return (
+    foreign.find(
+      (candidate) => candidate.getQueryData(APP_SETTINGS_QUERY_KEY) !== undefined,
+    ) ?? foreign[0]
+  );
+}
+
+/** The react-reconciler fiber fields the walk needs. */
+interface FiberNode {
+  child?: FiberNode | null;
+  sibling?: FiberNode | null;
+  memoizedProps?: unknown;
+}
+
+/** react-dom marks the createRoot container with this key prefix. */
+const FIBER_CONTAINER_PREFIX = "__reactContainer$";
+/** Hard cap on visited fibers; the app provider sits near the root anyway. */
+const MAX_FIBER_VISITS = 4_000;
+
+/**
+ * Query clients provided anywhere in the rendered tree, shallowest first.
+ * Breadth-first from the app root guarantees the app-level providers come
+ * before the per-plugin providers that wrap plugin surfaces.
+ */
+function collectProvidedQueryClients(): readonly unknown[] {
+  if (typeof document === "undefined") return [];
+  const rootElement = document.getElementById("root");
+  if (rootElement === null) return [];
+
+  const container = rootElement as unknown as Record<string, unknown>;
+  let rootFiber: FiberNode | null = null;
+  for (const key of Object.keys(container)) {
+    if (key.startsWith(FIBER_CONTAINER_PREFIX)) {
+      rootFiber = container[key] as FiberNode | null;
+      break;
+    }
+  }
+  if (rootFiber === null || typeof rootFiber !== "object") return [];
+
+  const candidates: unknown[] = [];
+  const queue: FiberNode[] = [rootFiber];
+  for (let index = 0; index < queue.length && index < MAX_FIBER_VISITS; index += 1) {
+    const fiber = queue[index];
+    const props = fiber.memoizedProps;
+    if (props !== null && typeof props === "object") {
+      candidates.push((props as Record<string, unknown>).client);
+    }
+    if (fiber.child) queue.push(fiber.child);
+    if (fiber.sibling) queue.push(fiber.sibling);
+  }
+  return candidates;
+}
+
+function findAppQueryClient(ownClient: unknown): AppSettingsQueryClient | null {
+  return pickAppQueryClient(collectProvidedQueryClients(), ownClient);
 }
 
 /** Parse the persisted preference fields; null when absent or malformed. */
@@ -79,6 +178,11 @@ export function mergeAppSettingsTheme(
 /**
  * Switch the active theme. Returns false (and changes nothing) when the
  * storage pipeline is unavailable, e.g. on native hosts.
+ *
+ * The patch is written through the app-level query client so the change
+ * applies live; the injected plugin client is only the fallback when the
+ * fiber walk cannot locate it, in which case the change lands in localStorage
+ * and applies on the next app launch.
  */
 export function applyAppThemePreference(
   queryClient: AppSettingsQueryClient,
@@ -86,9 +190,10 @@ export function applyAppThemePreference(
 ): boolean {
   if (typeof localStorage === "undefined") return false;
 
-  const cached = queryClient.getQueryData(APP_SETTINGS_QUERY_KEY);
+  const target = findAppQueryClient(queryClient) ?? queryClient;
+  const cached = target.getQueryData(APP_SETTINGS_QUERY_KEY);
   const next = mergeAppSettingsTheme(cached ?? readStoredAppSettings(), preference);
-  queryClient.setQueryData(APP_SETTINGS_QUERY_KEY, next);
+  target.setQueryData(APP_SETTINGS_QUERY_KEY, next);
   try {
     localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify(next));
   } catch {

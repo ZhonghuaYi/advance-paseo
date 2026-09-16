@@ -8,46 +8,41 @@ const GRAPHITE_DEFAULT = {
 } as const;
 
 describe("buildWallpaperCss", () => {
-  it("marks every runtime-decorated surface", () => {
+  it("paints the base coat on the html canvas for both modes", () => {
     const css = buildWallpaperCss(GRAPHITE_DEFAULT);
-    expect(css).toContain('[data-paseo-advance-chat-surface]');
-    expect(css).toContain('[data-paseo-advance-chat-clear]');
-    expect(css).toContain('[data-paseo-advance-workspace-sidebar]');
-    expect(css).toContain('[data-paseo-advance-right-sidebar]');
-    expect(css).toContain('[data-paseo-advance-workspace-tabs]');
-    expect(css).toContain('[data-paseo-advance-settings-surface]');
-    expect(css).toContain('[data-paseo-advance-settings-sidebar]');
-    expect(css).toContain('data-paseo-advance-wallpaper="light"');
-    expect(css).toContain('data-paseo-advance-wallpaper="dark"');
+    for (const mode of ["light", "dark"] as const) {
+      const base = css.match(
+        new RegExp(`html\\[data-paseo-advance-wallpaper="${mode}"\\] \\{`, "u"),
+      );
+      expect(base).not.toBeNull();
+    }
+    // The base coat references the image custom property and covers the canvas.
+    expect(css).toContain(`var(--paseo-advance-wallpaper-image)`);
+    expect(css).toContain("background-size: cover");
+    // The static body anti-flash color must never cover the canvas.
+    expect(css).toMatch(/html\[data-paseo-advance-wallpaper\] body \{/);
   });
 
-  it("glasses the settings screen like the chat surfaces", () => {
+  it("redirects the host's full-bleed surface variables to transparent", () => {
     const css = buildWallpaperCss(GRAPHITE_DEFAULT);
-    // Detail pane: chat-grade scrim over the image.
-    expect(css).toMatch(
-      /html\[data-paseo-advance-wallpaper="light"\] \[data-paseo-advance-settings-surface\]/,
-    );
-    // Cards: the same sheet glass as the composer, for both our own cards
-    // (testID) and host cards the engine marks by fingerprint.
+    expect(css).toContain("--colors-surface0: transparent");
+    expect(css).toContain("--colors-surface-sidebar: transparent");
+    expect(css).toContain("--colors-surface-workspace: transparent");
+  });
+
+  it("keeps glass refinement for the runtime-marked chrome surfaces", () => {
+    const css = buildWallpaperCss(GRAPHITE_DEFAULT);
+    expect(css).toContain("[data-paseo-advance-workspace-sidebar]");
+    expect(css).toContain("[data-paseo-advance-right-sidebar]");
+    expect(css).toContain("[data-paseo-advance-settings-sidebar]");
+    expect(css).toContain("[data-paseo-advance-workspace-tabs]");
     expect(css).toContain('[data-testid="advance-settings-card"]');
-    expect(css).toContain('[data-paseo-advance-settings-card]');
-    expect(css).toContain("rgba(255, 255, 255, 0.55)");
-    expect(css).toContain("rgba(18, 20, 26, 0.58)");
+    expect(css).toContain("[data-paseo-advance-settings-card]");
   });
 
-  it("keeps the compact-layout fallback and the desktop breakpoint", () => {
+  it("keeps the desktop glass breakpoint", () => {
     const css = buildWallpaperCss(GRAPHITE_DEFAULT);
     expect(css).toContain("@media (min-width: 721px)");
-    expect(css).toContain("@media (max-width: 720px)");
-  });
-
-  it("centers the image on every painted surface", () => {
-    const css = buildWallpaperCss(GRAPHITE_DEFAULT);
-    // Arbitrary wallpapers must sit centered (the miku-era right alignment
-    // cropped them); no surface may opt back into an edge-anchored image.
-    for (const match of css.matchAll(/background-position: ([^;]+);/g)) {
-      expect(match[1].replace(" !important", "").trim()).toBe("center");
-    }
   });
 
   it("styles the fixed test-id surfaces and modern selectors", () => {
@@ -58,13 +53,13 @@ describe("buildWallpaperCss", () => {
     expect(css).toContain(":has(");
   });
 
-  it("uses the authored base alphas at scrim 100", () => {
+  it("uses the authored base scrim at 100%", () => {
     const css = buildWallpaperCss(GRAPHITE_DEFAULT);
     expect(css).toContain("rgba(250, 250, 252, 0.72)");
     expect(css).toContain("rgba(16, 18, 24, 0.74)");
   });
 
-  it("scales scrims with the percent value", () => {
+  it("scales the base scrim with the percent value", () => {
     const heavy = buildWallpaperCss({ ...GRAPHITE_DEFAULT, scrim: 125 });
     expect(heavy).toContain("rgba(250, 250, 252, 0.9)");
     const light = buildWallpaperCss({ ...GRAPHITE_DEFAULT, scrim: 78 });
@@ -135,5 +130,14 @@ describe("buildWallpaperCss", () => {
     // backdrop-filter by name.
     expect(css).not.toContain("backdrop-filter:");
     expect(css).not.toContain("-webkit-backdrop-filter:");
+  });
+
+  it("centers the image on every painted surface", () => {
+    const css = buildWallpaperCss(GRAPHITE_DEFAULT);
+    // Arbitrary wallpapers must sit centered; no surface may opt back into
+    // an edge-anchored image.
+    for (const match of css.matchAll(/background-position: ([^;]+);/g)) {
+      expect(match[1].replace(" !important", "").trim()).toBe("center");
+    }
   });
 });

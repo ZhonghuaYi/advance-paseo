@@ -133,6 +133,33 @@ export const en = {
     refresh: "Refresh",
     emDash: "—",
   },
+  liveChat: {
+    sectionTitle: "Live chat overlays",
+    sectionInfo:
+      "A floating TODO card with the current plan in the conversation's top-right corner and a live tokens/sec meter above the composer, following each agent's own list.",
+    loading: "Loading live chat settings…",
+    todoCardLabel: "TODO card",
+    todoCardHint: "Float the active agent's todo list over the conversation",
+    goalLabel: "Show plan / goal",
+    goalHint: "Include the agent's latest plan at the top of the card",
+    maxItemsLabel: "Visible rows",
+    maxItemsHint: "Longer lists collapse behind a “+N more” row",
+    maxItemsOption: "{count} rows",
+    shiftLabel: "Chat text shift",
+    shiftHint: "0–360 px pushed left while the card is visible; 0 keeps text centered",
+    shiftValue: "{value} px",
+    shiftPresetLabels: {
+      off: "Off",
+      slight: "Slight",
+      balanced: "Balanced",
+      wide: "Wide",
+    } as Record<string, string>,
+    meterLabel: "Tokens/sec meter",
+    meterHint: "Live output speed at the bottom of the conversation",
+    meterShowsLabel: "Meter contents",
+    meterShowsHint: "Output tokens/sec, the turn's output count, and context pressure",
+    webOnlyNote: "Both overlays are desktop/web enhancements; mobile keeps Paseo's native UI.",
+  },
 };
 
 export type Dictionary = typeof en;
@@ -265,6 +292,33 @@ export const zh: Dictionary = {
     refreshNowHint: "与自动监听执行的操作相同",
     refresh: "刷新",
     emDash: "—",
+  },
+  liveChat: {
+    sectionTitle: "聊天实时浮层",
+    sectionInfo:
+      "在对话区右上角悬浮 TODO 卡片（附带当前的计划/goal），并在输入框上方显示实时 tokens/sec 速率，各自跟随当前 agent 的数据。",
+    loading: "正在加载聊天实时设置…",
+    todoCardLabel: "TODO 卡片",
+    todoCardHint: "把当前 agent 的待办列表悬浮显示在对话区",
+    goalLabel: "显示计划 / Goal",
+    goalHint: "在卡片顶部附带 agent 最近一次给出的计划",
+    maxItemsLabel: "可见行数",
+    maxItemsHint: "超出部分折叠为“+N 更多”一行",
+    maxItemsOption: "{count} 行",
+    shiftLabel: "正文左移距离",
+    shiftHint: "0–360 px；卡片显示时正文左移避开卡片，0 表示居中不变",
+    shiftValue: "{value} px",
+    shiftPresetLabels: {
+      off: "关闭",
+      slight: "轻微",
+      balanced: "均衡",
+      wide: "加大",
+    } as Record<string, string>,
+    meterLabel: "Tokens/sec 速率",
+    meterHint: "在对话区底部实时显示输出速度",
+    meterShowsLabel: "速率内容",
+    meterShowsHint: "输出 tokens/sec、本回合输出量、上下文占用",
+    webOnlyNote: "两个浮层均为桌面端/网页端增强；移动端保持 Paseo 原生界面。",
   },
 };
 
