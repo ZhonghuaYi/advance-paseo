@@ -3,13 +3,24 @@
 // registered for every workspace returned by the initial list and for every
 // workspace the daemon later streams through workspace updates.
 
-import type { PluginButtonRegistration, PluginClientContext } from "@getpaseo/plugin/client";
+import type { PluginButtonIconProps, PluginButtonRegistration, PluginClientContext } from "@getpaseo/plugin/client";
+import { Icon } from "@getpaseo/plugin/client/react-native";
 import { getText } from "../i18n/store";
+import { readHostThemeSignals } from "../wallpaper/engine";
+import { resolveWallpaperMode } from "../wallpaper/theme-detect";
 import { ThemeSwitcherPopover } from "./popover";
 import { buttonIdSuffix } from "./catalog";
 
 const LIST_ATTEMPTS = 3;
 const LIST_RETRY_DELAY_MS = 2000;
+
+/** Header icon tinted from the LIVE theme family on <html>, not the host's
+ * JS-side theme prop (which lags behind our class flip and left a light-gray
+ * icon on the light theme's header). */
+function ThemedPaletteIcon(props: PluginButtonIconProps) {
+  const family = resolveWallpaperMode(readHostThemeSignals(), "all") ?? "dark";
+  return <Icon name="Palette" size={props.size} color={family === "light" ? "#6F655F" : "#C8CCD8"} />;
+}
 
 export function contributeThemeSwitcher(client: PluginClientContext): () => void {
   const registrations = new Map<string, PluginButtonRegistration>();
@@ -38,7 +49,7 @@ export function contributeThemeSwitcher(client: PluginClientContext): () => void
         workspaceId,
         button: {
           title: buttonTitle,
-          icon: "Palette",
+          icon: ThemedPaletteIcon,
           behavior: { kind: "popover", Content: ThemeSwitcherPopover },
         },
       });

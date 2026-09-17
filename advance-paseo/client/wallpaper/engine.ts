@@ -402,7 +402,7 @@ function installController(): void {
   Reflect.set(style, CLEANUP_PROPERTY, cleanup);
 }
 
-function readHostThemeSignals(): HostThemeSignals {
+export function readHostThemeSignals(): HostThemeSignals {
   const classList = document.documentElement.classList;
   const pluginTheme = classList.contains("pluginLight")
     ? "light"

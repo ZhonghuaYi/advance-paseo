@@ -8,6 +8,8 @@ import { useCallback, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { PluginButtonContentProps } from "@getpaseo/plugin/client";
 import { useText } from "../i18n/store";
+import { readHostThemeSignals } from "../wallpaper/engine";
+import { resolveWallpaperMode } from "../wallpaper/theme-detect";
 import {
   applyAppThemePreference,
   readAppThemePreference,
@@ -20,6 +22,13 @@ import {
   type BuiltinThemeOption,
   type PluginThemeOption,
 } from "./catalog";
+
+/** The light/dark family of the theme currently active on <html>. Our own
+ * class flips land here instantly, so this never lags like the host's
+ * JS-side theme prop does. */
+function activeThemeFamily(): "light" | "dark" {
+  return resolveWallpaperMode(readHostThemeSignals(), "all") ?? "dark";
+}
 
 const POPOVER_WIDTH = 264;
 const ROW_HEIGHT = 36;
@@ -109,13 +118,36 @@ function ThemeSection({ title, muted, children }: SectionProps) {
   );
 }
 
+/** Neutral palettes per detected theme family. The host hands plugin
+ * components its JS-side theme, which lags behind our <html> class flip
+ * (the app reconciles on its next theme operation), so coloring from the
+ * `theme` prop renders the PREVIOUS theme's text on the NEW theme's
+ * surface. The class signal is the truth we control — read it at mount. */
+const FAMILY_PALETTES = {
+  light: {
+    foreground: "#2C2A26",
+    muted: "#6E675C",
+    border: "#C6C1B2",
+    accent: "#334155",
+    danger: "#B3374B",
+  },
+  dark: {
+    foreground: "#E9EAF4",
+    muted: "#9BA0B8",
+    border: "#4A5068",
+    accent: "#94A3B8",
+    danger: "#E08A96",
+  },
+} as const;
+
 export function ThemeSwitcherPopover(props: PluginButtonContentProps) {
-  const { theme, layout, close } = props;
+  const { layout, close } = props;
   const t = useText();
   // Re-read on every mount so a freshly opened popover reflects the current
   // preference even if it changed through the app's own appearance settings.
   const [preference, setPreference] = useState(() => readAppThemePreference());
   const [failed, setFailed] = useState(false);
+  const palette = FAMILY_PALETTES[activeThemeFamily()];
 
   const selectBuiltin = useCallback(
     (option: BuiltinThemeOption) => {
@@ -147,7 +179,7 @@ export function ThemeSwitcherPopover(props: PluginButtonContentProps) {
   if (layout.platform !== "web") {
     return (
       <View style={{ width: POPOVER_WIDTH, padding: 12 }}>
-        <Text style={{ color: theme.colors.foreground, fontSize: 13 }}>
+        <Text style={{ color: palette.foreground, fontSize: 13 }}>
           {t.themeSwitcher.nativeFallback}
         </Text>
       </View>
@@ -156,30 +188,30 @@ export function ThemeSwitcherPopover(props: PluginButtonContentProps) {
 
   return (
     <View style={{ width: POPOVER_WIDTH, padding: 4, paddingBottom: 8 }}>
-      <ThemeSection title={t.themeSwitcher.systemGroup} muted={theme.colors.foregroundMuted}>
+      <ThemeSection title={t.themeSwitcher.systemGroup} muted={palette.muted}>
         {BUILTIN_THEME_OPTIONS.map((option) => (
           <ThemeRow
             key={option.preference}
             label={t.themeSwitcher.themeNameLabels[option.preference] ?? option.preference}
             swatch={option.swatch}
             active={isActiveBuiltin(option, preference)}
-            borderColor={theme.colors.border}
-            foreground={theme.colors.foreground}
-            accent={theme.colors.accent}
+            borderColor={palette.border}
+            foreground={palette.foreground}
+            accent={palette.accent}
             onPress={() => selectBuiltin(option)}
           />
         ))}
       </ThemeSection>
-      <ThemeSection title={t.themeSwitcher.customGroup} muted={theme.colors.foregroundMuted}>
+      <ThemeSection title={t.themeSwitcher.customGroup} muted={palette.muted}>
         {PLUGIN_THEME_OPTIONS.map((option) => (
           <ThemeRow
             key={option.pluginThemeId}
             label={option.name}
             swatch={option.swatch}
             active={isActivePluginTheme(option, preference)}
-            borderColor={theme.colors.border}
-            foreground={theme.colors.foreground}
-            accent={theme.colors.accent}
+            borderColor={palette.border}
+            foreground={palette.foreground}
+            accent={palette.accent}
             onPress={() => selectPluginTheme(option)}
           />
         ))}
@@ -187,7 +219,7 @@ export function ThemeSwitcherPopover(props: PluginButtonContentProps) {
       {failed ? (
         <Text
           accessibilityRole="alert"
-          style={{ color: theme.colors.statusDanger, fontSize: 12, paddingHorizontal: 8, marginTop: 4 }}
+          style={{ color: palette.danger, fontSize: 12, paddingHorizontal: 8, marginTop: 4 }}
         >
           {t.themeSwitcher.failed}
         </Text>
