@@ -19,6 +19,8 @@ export interface PluginThemeOption {
   /** Registered display name of the contributed theme. */
   readonly name: string;
   readonly swatch: string;
+  /** Light or dark family, mapped to the pluginLight/pluginDark class. */
+  readonly appearance: "light" | "dark";
 }
 
 export const BUILTIN_THEME_OPTIONS: readonly BuiltinThemeOption[] = [
@@ -39,12 +41,14 @@ export const PLUGIN_THEME_OPTIONS: readonly PluginThemeOption[] = PALETTE_PAIRS.
       pluginThemeId: pair.light.id,
       name: pair.light.name,
       swatch: pair.light.colors.background,
+      appearance: "light",
     },
     {
       preference: "plugin",
       pluginThemeId: pair.dark.id,
       name: pair.dark.name,
       swatch: pair.dark.colors.background,
+      appearance: "dark",
     },
   ],
 );
@@ -54,6 +58,19 @@ export interface AppThemePreference {
   readonly theme: string;
   readonly pluginThemeId: string | null;
 }
+
+/** Every theme class the host can place on <html> (unistyles theme names). */
+export const ALL_THEME_CLASSES: readonly string[] = [
+  "light",
+  "dark",
+  "zinc",
+  "midnight",
+  "claude",
+  "ghostty",
+  "pureBlack",
+  "pluginLight",
+  "pluginDark",
+];
 
 /** Plugin button ids must match /^[a-z][a-z0-9-]*$/ (validated by the host),
  * but workspace ids look like "wks_ca0cd12d5de8c6d0" — underscores and any

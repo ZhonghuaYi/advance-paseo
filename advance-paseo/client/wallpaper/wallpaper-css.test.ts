@@ -23,11 +23,30 @@ describe("buildWallpaperCss", () => {
     expect(css).toMatch(/html\[data-paseo-advance-wallpaper\] body \{/);
   });
 
-  it("redirects the host's full-bleed surface variables to transparent", () => {
+  it("redirects the sidebar/workspace variables and scopes surface0 to shells", () => {
     const css = buildWallpaperCss(GRAPHITE_DEFAULT);
-    expect(css).toContain("--colors-surface0: transparent");
+    // surface-sidebar / surface-workspace only paint full-bleed containers,
+    // so they redirect globally...
     expect(css).toContain("--colors-surface-sidebar: transparent");
     expect(css).toContain("--colors-surface-workspace: transparent");
+    // ...but surface0 also fills popup lists and small controls, so it must
+    // NOT redirect globally — only discovered shell classes go transparent.
+    expect(css).not.toContain("--colors-surface0: transparent");
+  });
+
+  it("makes only the discovered shell classes transparent", () => {
+    const css = buildWallpaperCss(GRAPHITE_DEFAULT, ["unistyles_abc123", "unistyles_def456"]);
+    expect(css).toContain(
+      "html[data-paseo-advance-wallpaper] .unistyles_abc123,\n  .unistyles_def456 {",
+    );
+    expect(css).toContain("background-color: transparent !important");
+    // Hostile tokens never reach the selector list.
+    const safe = buildWallpaperCss(GRAPHITE_DEFAULT, ["unistyles_ok", "body}", "x y"]);
+    expect(safe).toContain(".unistyles_ok");
+    expect(safe).not.toContain("body}");
+    // Without discoveries, no class rule is emitted at all.
+    const bare = buildWallpaperCss(GRAPHITE_DEFAULT);
+    expect(bare).not.toContain("html[data-paseo-advance-wallpaper] .unistyles_");
   });
 
   it("keeps glass refinement for the runtime-marked chrome surfaces", () => {

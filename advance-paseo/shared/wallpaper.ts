@@ -161,3 +161,4 @@ export const wallpaperDeleteRpc = defineRpc({
   input: z.object({ id: z.string().min(1) }),
   output: z.object({ deleted: z.boolean() }),
 });
+

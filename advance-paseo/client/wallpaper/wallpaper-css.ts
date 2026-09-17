@@ -34,6 +34,9 @@ export const WORKSPACE_SIDEBAR_ATTRIBUTE = "data-paseo-advance-workspace-sidebar
 export const RIGHT_SIDEBAR_ATTRIBUTE = "data-paseo-advance-right-sidebar";
 export const WORKSPACE_TABS_ATTRIBUTE = "data-paseo-advance-workspace-tabs";
 export const SETTINGS_SIDEBAR_ATTRIBUTE = "data-paseo-advance-settings-sidebar";
+/** Set by the engine on root-level opaque literal-paint covers (layers that
+ * paint a solid theme color directly, outside the CSS-variable system). */
+export const OPAQUE_COVER_ATTRIBUTE = "data-paseo-advance-opaque-cover";
 /** Set by the engine on host settings cards found by their visual fingerprint. */
 export const SETTINGS_CARD_ATTRIBUTE = "data-paseo-advance-settings-card";
 /** testID our settings sections put on every host SettingsCard. */
@@ -57,7 +60,26 @@ function glass(blurPx: number, saturate: number): string {
   ].join("\n");
 }
 
-export function buildWallpaperCss(options: WallpaperStyleOptions): string {
+/** Class-scoped shell transparency. Only class tokens that survive the
+ * engine's unistyles-rule scan are passed in; anything else is dropped so a
+ * corrupt discovery cannot inject arbitrary selectors. */
+function shellTransparency(shellClasses: readonly string[]): string {
+  const selectors = shellClasses.filter((token) => /^[a-z0-9_-]+$/u.test(token));
+  if (selectors.length === 0) {
+    return "/* No shell classes discovered yet; shells keep their theme paint. */";
+  }
+  const selectorList = selectors.map((token) => `.${token}`).join(",\n  ");
+  return [
+    `html[${ROOT_ATTRIBUTE}] ${selectorList} {`,
+    "  background-color: transparent !important;",
+    "}",
+  ].join("\n");
+}
+
+export function buildWallpaperCss(
+  options: WallpaperStyleOptions,
+  shellClasses: readonly string[] = [],
+): string {
   // Re-clamp defensively: options may flow in from unvalidated callers.
   const scrim = Math.min(SCRIM_RANGE.max, Math.max(SCRIM_RANGE.min, Math.round(options.scrim)));
   const blur = blurTiers(
@@ -117,16 +139,32 @@ html[${ROOT_ATTRIBUTE}] body {
   background-image: none !important;
 }
 
-/* Blanket transparency. The host compiles every themed surface color into a
- * var(--colors-*) reference (react-native-unistyles CSSVars mode), so
- * redirecting the three full-bleed surface variables shows the base coat on
- * every screen without discovering individual elements. Elevated surfaces —
- * cards, menus, popovers (surface1/surface2/popover) — keep their opaque
- * theme colors for readability. */
+/* Blanket transparency, scoped narrowly.
+ *
+ * surface-sidebar / surface-workspace are only consumed by full-bleed
+ * containers, so their variables redirect globally. surface0 is ALSO the
+ * fill of popups (e.g. the host picker list) and small controls, so a
+ * global redirect would make those unreadable — instead the engine scans
+ * the host's unistyles stylesheet for the full-bleed SHELL class signature
+ * (a layout property like flex:1 together with background
+ * var(--colors-surface0)) and only those classes become transparent.
+ * Elevated surfaces — cards, menus, popovers (surface1/surface2/popover,
+ * and popup-shaped surface0) — keep their opaque theme colors. Root layers
+ * that paint literal colors outside the variable system are cleared
+ * individually below via OPAQUE_COVER_ATTRIBUTE. */
 html[${ROOT_ATTRIBUTE}] {
-  --colors-surface0: transparent !important;
   --colors-surface-sidebar: transparent !important;
   --colors-surface-workspace: transparent !important;
+}
+
+${shellTransparency(shellClasses)}
+
+/* Root-level covers: full-viewport layers the host paints with literal
+ * theme colors (outside the variables). The engine marks them at runtime;
+ * without this they would sit over the canvas and hide the base coat. */
+html[${ROOT_ATTRIBUTE}] [${OPAQUE_COVER_ATTRIBUTE}] {
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 @media (min-width: 721px) {

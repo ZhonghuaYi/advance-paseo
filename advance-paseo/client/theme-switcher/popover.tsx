@@ -6,7 +6,6 @@
 
 import { useCallback, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import { useQueryClient } from "@tanstack/react-query";
 import type { PluginButtonContentProps } from "@getpaseo/plugin/client";
 import { useText } from "../i18n/store";
 import {
@@ -113,7 +112,6 @@ function ThemeSection({ title, muted, children }: SectionProps) {
 export function ThemeSwitcherPopover(props: PluginButtonContentProps) {
   const { theme, layout, close } = props;
   const t = useText();
-  const queryClient = useQueryClient();
   // Re-read on every mount so a freshly opened popover reflects the current
   // preference even if it changed through the app's own appearance settings.
   const [preference, setPreference] = useState(() => readAppThemePreference());
@@ -122,27 +120,28 @@ export function ThemeSwitcherPopover(props: PluginButtonContentProps) {
   const selectBuiltin = useCallback(
     (option: BuiltinThemeOption) => {
       const next = { theme: option.preference, pluginThemeId: null };
-      if (!applyAppThemePreference(queryClient, next)) {
+      // Appearance only matters for plugin themes; built-ins ignore it.
+      if (!applyAppThemePreference(next, "light")) {
         setFailed(true);
         return;
       }
       setPreference(next);
       close();
     },
-    [queryClient, close],
+    [close],
   );
 
   const selectPluginTheme = useCallback(
     (option: PluginThemeOption) => {
       const next = { theme: option.preference, pluginThemeId: option.pluginThemeId };
-      if (!applyAppThemePreference(queryClient, next)) {
+      if (!applyAppThemePreference(next, option.appearance)) {
         setFailed(true);
         return;
       }
       setPreference(next);
       close();
     },
-    [queryClient, close],
+    [close],
   );
 
   if (layout.platform !== "web") {

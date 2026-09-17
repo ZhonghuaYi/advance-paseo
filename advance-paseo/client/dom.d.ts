@@ -9,6 +9,7 @@
 interface AdvanceCssStyleDeclaration {
   setProperty(name: string, value: string): void;
   removeProperty(name: string, value?: string): void;
+  getPropertyValue(name: string): string;
 }
 
 interface AdvanceDomRect {
@@ -26,6 +27,7 @@ interface AdvanceMutationObserverInit {
 
 interface Element {
   id: string;
+  tagName: string;
   textContent: string | null;
   /** True while the node is attached to the document (engine self-heal). */
   readonly isConnected: boolean;
@@ -45,8 +47,13 @@ interface Element {
   readonly children: HTMLElement[];
   addEventListener(type: string, listener: () => void): void;
   removeEventListener(type: string, listener: () => void): void;
-  /** Theme detection reads the host's active-theme class on <html>. */
-  readonly classList: { contains(token: string): boolean };
+  /** Theme detection and the theme switcher read/flip the active-theme
+   * class on <html>; the full set is known, so only these members are used. */
+  readonly classList: {
+    contains(token: string): boolean;
+    add(token: string): void;
+    remove(token: string): void;
+  };
 }
 
 interface HTMLElement extends Element {
@@ -173,10 +180,11 @@ declare const document: {
   ): void;
 };
 
-/** Read-only computed-style fields the settings-card fingerprint and the
- * capability gate read. */
+/** Read-only computed-style fields the settings-card fingerprint, the
+ * capability gate, and the temporary diagnostics read. */
 interface AdvanceComputedStyle {
   readonly backgroundColor: string;
+  readonly backgroundImage: string;
   readonly borderRadius: string;
   readonly borderTopWidth: string;
   readonly position: string;

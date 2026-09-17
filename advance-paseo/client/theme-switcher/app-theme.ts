@@ -1,124 +1,30 @@
-// Applies theme preferences through the host's app-settings pipeline.
+// Applies theme preferences by persisting the app's own settings fields and
+// flipping the host's theme class on <html> for the immediate visual switch.
 //
-// Paseo stores its appearance preference in localStorage under "app-settings"
-// and mirrors it into a react-query cache entry keyed ["app-settings"]; the
-// AppearanceProvider re-applies the theme whenever that cache entry changes.
+// Why not react-query: the host gives every plugin installation its OWN
+// QueryClient instance (PluginRuntimeBoundary renders plugins under
+// `<plugin>.queryClient`, verified against the host bundle). The app's
+// appearance settings live in a separate app-owned client, so a cache patch
+// written from plugin code updates an entry nobody observes.
 //
-// The cache write needs care: the host gives every plugin client its own
-// react-query instance and provides THAT to plugin surfaces, so
-// useQueryClient() inside plugin UI returns a client nobody but the plugin
-// observes — a patch written there never reaches the appearance provider
-// (it only lands in localStorage, applying after the next app launch). To
-// apply live, this module walks the rendered React fiber tree from the app
-// root and writes through the app-level QueryClientProvider instead: the
-// app's own provider sits near the root and its cache already holds the
-// settings document, so the shallowest provider that has read
-// ["app-settings"] is the one the appearance provider watches. When the walk
-// finds nothing (host layout change, native host), the write falls back to
-// the injected client and the change simply applies on the next launch.
+// Why the class flip is safe and complete: react-native-unistyles compiles
+// every registered theme's variables into `:root.<themeName>` rules and the
+// app itself activates a theme by toggling that class on <html> (built-ins:
+// light/dark/zinc/midnight/claude/ghostty/pureBlack; plugin themes:
+// pluginLight/pluginDark). Flipping the class switches every CSS variable —
+// the whole UI — through the app's own mechanism, with no access to host
+// internals. "auto" has no class; the prefers-color-scheme media rules then
+// decide, exactly as the app leaves it.
+//
+// The preference is also persisted to the same localStorage fields the app's
+// appearance picker writes (`theme`, `pluginThemeId`), so the choice survives
+// restart and the app adopts it on its next settings read. The app's
+// in-memory unistyles state may briefly disagree; the next app-driven theme
+// operation or launch reconciles it.
 
-import type { AppThemePreference } from "./catalog";
+import { ALL_THEME_CLASSES, type AppThemePreference } from "./catalog";
 
 export const APP_SETTINGS_STORAGE_KEY = "app-settings";
-const APP_SETTINGS_QUERY_KEY: readonly unknown[] = ["app-settings"];
-
-/** Structural slice of the injected QueryClient the switcher relies on. */
-export interface AppSettingsQueryClient {
-  getQueryData(queryKey: readonly unknown[]): unknown;
-  setQueryData(queryKey: readonly unknown[], updater: unknown): unknown;
-}
-
-interface QueryClientLike {
-  getQueryData(queryKey: readonly unknown[]): unknown;
-  setQueryData(queryKey: readonly unknown[], updater: unknown): unknown;
-}
-
-function isQueryClientLike(value: unknown): value is QueryClientLike {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as {
-    queryCache?: unknown;
-    getQueryData?: unknown;
-    setQueryData?: unknown;
-  };
-  return (
-    typeof candidate.getQueryData === "function" &&
-    typeof candidate.setQueryData === "function" &&
-    typeof candidate.queryCache === "object" &&
-    candidate.queryCache !== null
-  );
-}
-
-/**
- * Pick the client a theme patch should be written to. Candidates arrive
- * shallowest-first from the fiber walk; the app-level client is preferred
- * because its cache already holds the settings document the appearance
- * provider watches. The plugin's own client (nobody observes it) is skipped.
- */
-export function pickAppQueryClient(
-  candidates: readonly unknown[],
-  ownClient: unknown,
-): AppSettingsQueryClient | null {
-  const foreign = candidates.filter(
-    (candidate): candidate is QueryClientLike =>
-      isQueryClientLike(candidate) && candidate !== ownClient,
-  );
-  if (foreign.length === 0) return null;
-  return (
-    foreign.find(
-      (candidate) => candidate.getQueryData(APP_SETTINGS_QUERY_KEY) !== undefined,
-    ) ?? foreign[0]
-  );
-}
-
-/** The react-reconciler fiber fields the walk needs. */
-interface FiberNode {
-  child?: FiberNode | null;
-  sibling?: FiberNode | null;
-  memoizedProps?: unknown;
-}
-
-/** react-dom marks the createRoot container with this key prefix. */
-const FIBER_CONTAINER_PREFIX = "__reactContainer$";
-/** Hard cap on visited fibers; the app provider sits near the root anyway. */
-const MAX_FIBER_VISITS = 4_000;
-
-/**
- * Query clients provided anywhere in the rendered tree, shallowest first.
- * Breadth-first from the app root guarantees the app-level providers come
- * before the per-plugin providers that wrap plugin surfaces.
- */
-function collectProvidedQueryClients(): readonly unknown[] {
-  if (typeof document === "undefined") return [];
-  const rootElement = document.getElementById("root");
-  if (rootElement === null) return [];
-
-  const container = rootElement as unknown as Record<string, unknown>;
-  let rootFiber: FiberNode | null = null;
-  for (const key of Object.keys(container)) {
-    if (key.startsWith(FIBER_CONTAINER_PREFIX)) {
-      rootFiber = container[key] as FiberNode | null;
-      break;
-    }
-  }
-  if (rootFiber === null || typeof rootFiber !== "object") return [];
-
-  const candidates: unknown[] = [];
-  const queue: FiberNode[] = [rootFiber];
-  for (let index = 0; index < queue.length && index < MAX_FIBER_VISITS; index += 1) {
-    const fiber = queue[index];
-    const props = fiber.memoizedProps;
-    if (props !== null && typeof props === "object") {
-      candidates.push((props as Record<string, unknown>).client);
-    }
-    if (fiber.child) queue.push(fiber.child);
-    if (fiber.sibling) queue.push(fiber.sibling);
-  }
-  return candidates;
-}
-
-function findAppQueryClient(ownClient: unknown): AppSettingsQueryClient | null {
-  return pickAppQueryClient(collectProvidedQueryClients(), ownClient);
-}
 
 /** Parse the persisted preference fields; null when absent or malformed. */
 export function parseAppThemePreference(raw: string | null): AppThemePreference | null {
@@ -146,9 +52,9 @@ export function readAppThemePreference(): AppThemePreference | null {
 }
 
 /**
- * The full stored settings document, so a cache miss can merge without
- * wiping unrelated fields (fonts, language, …). Malformed storage reads as
- * an empty document.
+ * The full stored settings document, so a write merges without wiping
+ * unrelated fields (fonts, language, …). Malformed storage reads as an
+ * empty document.
  */
 function readStoredAppSettings(): Record<string, unknown> {
   const raw = localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
@@ -163,7 +69,7 @@ function readStoredAppSettings(): Record<string, unknown> {
     : {};
 }
 
-/** Shallow-merge a preference patch onto the stored settings document. */
+/** Shallow-merge a preference patch onto a settings document. */
 export function mergeAppSettingsTheme(
   current: unknown,
   preference: AppThemePreference,
@@ -176,28 +82,52 @@ export function mergeAppSettingsTheme(
 }
 
 /**
- * Switch the active theme. Returns false (and changes nothing) when the
- * storage pipeline is unavailable, e.g. on native hosts.
- *
- * The patch is written through the app-level query client so the change
- * applies live; the injected plugin client is only the fallback when the
- * fiber walk cannot locate it, in which case the change lands in localStorage
- * and applies on the next app launch.
+ * Built-in theme preference -> unistyles theme class on <html>. Plugin
+ * preferences map through the contributed palette's appearance; "auto" maps
+ * to no class (the OS media rules decide, as the app leaves it).
+ */
+export function themeClassFor(
+  preference: AppThemePreference,
+  contributedAppearance: "light" | "dark",
+): string | null {
+  if (preference.theme === "plugin") {
+    return contributedAppearance === "light" ? "pluginLight" : "pluginDark";
+  }
+  switch (preference.theme) {
+    case "light":
+    case "dark":
+    case "zinc":
+    case "midnight":
+    case "claude":
+    case "ghostty":
+    case "pureBlack":
+      return preference.theme;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Switch the active theme: persist the preference, then flip the theme class
+ * on <html> for the immediate visual change. Returns false (and changes
+ * nothing) when the storage pipeline is unavailable, e.g. on native hosts.
  */
 export function applyAppThemePreference(
-  queryClient: AppSettingsQueryClient,
   preference: AppThemePreference,
+  contributedAppearance: "light" | "dark",
 ): boolean {
-  if (typeof localStorage === "undefined") return false;
+  if (typeof localStorage === "undefined" || typeof document === "undefined") return false;
 
-  const target = findAppQueryClient(queryClient) ?? queryClient;
-  const cached = target.getQueryData(APP_SETTINGS_QUERY_KEY);
-  const next = mergeAppSettingsTheme(cached ?? readStoredAppSettings(), preference);
-  target.setQueryData(APP_SETTINGS_QUERY_KEY, next);
+  const next = mergeAppSettingsTheme(readStoredAppSettings(), preference);
   try {
     localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify(next));
   } catch {
     return false;
   }
+
+  const themeClass = themeClassFor(preference, contributedAppearance);
+  const classList = document.documentElement.classList;
+  for (const name of ALL_THEME_CLASSES) classList.remove(name);
+  if (themeClass !== null) classList.add(themeClass);
   return true;
 }

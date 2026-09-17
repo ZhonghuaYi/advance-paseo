@@ -8,9 +8,9 @@ import {
 import {
   mergeAppSettingsTheme,
   parseAppThemePreference,
-  pickAppQueryClient,
+  themeClassFor,
 } from "./app-theme";
-import { buttonIdSuffix } from "./catalog";
+import { buttonIdSuffix, ALL_THEME_CLASSES } from "./catalog";
 import { PALETTE_PAIRS } from "../wallpaper/palettes";
 
 describe("theme catalog", () => {
@@ -35,12 +35,14 @@ describe("theme catalog", () => {
           pluginThemeId: pair.light.id,
           name: pair.light.name,
           swatch: pair.light.colors.background,
+          appearance: "light",
         },
         {
           preference: "plugin",
           pluginThemeId: pair.dark.id,
           name: pair.dark.name,
           swatch: pair.dark.colors.background,
+          appearance: "dark",
         },
       ]),
     );
@@ -126,50 +128,38 @@ describe("app-settings preference plumbing", () => {
   });
 });
 
-describe("app query client resolution", () => {
-  /** Duck-typed react-query client; `document` pre-seeds the app-settings key. */
-  function fakeClient(document?: unknown) {
-    return {
-      queryCache: {},
-      getQueryData: (queryKey: readonly unknown[]) =>
-        queryKey[0] === "app-settings" ? document : undefined,
-      setQueryData: () => null,
-    };
-  }
-
-  it("prefers the foreign client whose cache holds the settings document", () => {
-    // Shallowest-first, as the fiber walk orders candidates: an unrelated
-    // provider, the app-level client (which has read app-settings), then the
-    // plugin's own client last.
-    const own = fakeClient();
-    const app = fakeClient({ theme: "auto", pluginThemeId: null });
-    const other = fakeClient();
-    expect(pickAppQueryClient([other, app, own], own)).toBe(app);
+describe("theme class mapping", () => {
+  it("maps built-in preferences to the host's unistyles theme classes", () => {
+    for (const preference of ["light", "dark", "zinc", "midnight", "claude", "ghostty", "pureBlack"]) {
+      expect(themeClassFor({ theme: preference, pluginThemeId: null }, "light")).toBe(
+        preference,
+      );
+    }
   });
 
-  it("falls back to the shallowest foreign client when no cache holds it", () => {
-    const own = fakeClient();
-    const shallow = fakeClient();
-    const deep = fakeClient();
-    expect(pickAppQueryClient([shallow, deep, own], own)).toBe(shallow);
+  it("maps auto to no class so the OS media rules decide", () => {
+    expect(themeClassFor({ theme: "auto", pluginThemeId: null }, "light")).toBeNull();
   });
 
-  it("returns null when only the plugin's own client is present", () => {
-    const own = fakeClient();
-    expect(pickAppQueryClient([own], own)).toBeNull();
-    expect(pickAppQueryClient([], own)).toBeNull();
+  it("maps plugin preferences through the contributed appearance", () => {
+    expect(themeClassFor({ theme: "plugin", pluginThemeId: "x" }, "light")).toBe("pluginLight");
+    expect(themeClassFor({ theme: "plugin", pluginThemeId: "x" }, "dark")).toBe("pluginDark");
   });
 
-  it("skips values that do not duck-type as query clients", () => {
-    const own = fakeClient();
-    const app = fakeClient({ theme: "dark", pluginThemeId: null });
-    expect(
-      pickAppQueryClient(
-        [null, undefined, "client", 42, { queryCache: null }, app, own],
-        own,
-      ),
-    ).toBe(app);
-    // A provider without both cache methods is not a usable target either.
-    expect(pickAppQueryClient([{ getQueryData: () => 1 }], {})).toBeNull();
+  it("only ever produces theme classes the host actually registered", () => {
+    const preferences = [
+      ...BUILTIN_THEME_OPTIONS.map((option) => option.preference),
+      "plugin",
+      "unknown-garbage",
+    ];
+    for (const preference of preferences) {
+      for (const appearance of ["light", "dark"] as const) {
+        const themeClass = themeClassFor({ theme: preference, pluginThemeId: "x" }, appearance);
+        if (themeClass !== null) {
+          expect(ALL_THEME_CLASSES).toContain(themeClass);
+        }
+      }
+    }
+    expect(themeClassFor({ theme: "unknown-garbage", pluginThemeId: null }, "light")).toBeNull();
   });
 });
