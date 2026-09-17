@@ -167,6 +167,14 @@ export function setWallpaperImages(images: WallpaperImages): void {
     }
   }
   current.images = images;
+  // Warm both slots' decode cache so the FIRST switch to a slot paints
+  // instantly instead of pausing on a fresh image decode.
+  for (const mode of ["light", "dark"] as const) {
+    const url = wallpaperUrlFor(current, mode);
+    if (url === "") continue;
+    const warm = document.createElement("img");
+    warm.src = url;
+  }
   current.reschedule(0);
 }
 
@@ -304,6 +312,25 @@ function installController(): void {
     applyMode(instance, effectiveMode);
   };
 
+  /**
+   * Recompute the wallpaper slot and repaint WITHOUT the debounce. Mode
+   * detection only reads the theme class on <html>, so this is cheap enough
+   * to run in the observer microtask — the wallpaper swaps in the same frame
+   * as the CSS-variable theme change instead of one debounce later (which
+   * read as a laggy transition). Glass decoration stays on the debounce.
+   */
+  const updateModeNow = () => {
+    if (instance.stopped) return;
+    instance.mode = resolveWallpaperMode(readHostThemeSignals(), instance.state.mode);
+    instance.modeDirty = false;
+    const detected = instance.mode;
+    const effectiveMode =
+      instance.state.enabled && detected !== null && instance.images[detected] !== null
+        ? detected
+        : null;
+    applyMode(instance, effectiveMode);
+  };
+
   const schedule = (delay: number) => {
     if (instance.stopped) return;
     if (instance.timer !== null) window.clearTimeout(instance.timer);
@@ -354,7 +381,15 @@ function installController(): void {
     // Streaming re-renders only shuffle text nodes inside glass shells and
     // can never mount or restyle one, so they are ignored outright.
     if (isTextOnlyBatch(records)) return;
-    if (records.some((record) => record.type === "attributes")) {
+    // The theme class flip lands on <html>: repaint the wallpaper slot in
+    // the same frame as the host's variable-driven recolor.
+    if (
+      records.some(
+        (record) => record.type === "attributes" && record.target === document.documentElement,
+      )
+    ) {
+      updateModeNow();
+    } else if (records.some((record) => record.type === "attributes")) {
       instance.modeDirty = true;
     }
     schedule(UPDATE_DEBOUNCE_MS);
@@ -363,8 +398,10 @@ function installController(): void {
 
   const prefersDarkMedia = window.matchMedia("(prefers-color-scheme: dark)");
   const handleSchemeChange = () => {
-    instance.modeDirty = true;
-    schedule(180);
+    // "auto" mode follows the OS preference; same-frame repaint like a
+    // class flip.
+    updateModeNow();
+    schedule(UPDATE_DEBOUNCE_MS);
   };
   const handleResize = () => {
     // Sidebar geometry (which element is the workspace rail) depends on the
