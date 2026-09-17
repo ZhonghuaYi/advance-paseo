@@ -587,10 +587,10 @@ function discoverSurface0ShellClasses(): string[] {
  *
  * Narrow gates keep content cards out: only elements covering at least half
  * the viewport, fully opaque, not raised above the layout (z-index auto or 0
- * — real overlays use higher values), and painting exactly a window-base
- * color (the live --colors-background value or the app's constant light
- * base). Elevated surfaces like the permission card (surface1) never match
- * the color gate.
+ * — real overlays use higher values), and painting a window-base color (any
+ * registered theme's background token, or the app's constant light base).
+ * Elevated surfaces like the permission card (surface1) never match the
+ * color gate.
  */
 function markOpaqueCovers(root: HTMLElement, elements: Set<HTMLElement>): void {
   const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
@@ -610,8 +610,16 @@ function markOpaqueCovers(root: HTMLElement, elements: Set<HTMLElement>): void {
   }
 }
 
-/** Window-base paints: the live theme background token plus the app's
- * constant light base (#f2f2f2, verified against the host bundle). */
+/**
+ * Window-base paints a cover layer can show: the app's constant light base
+ * (#f2f2f2, host bundle), the live theme's background token, AND every other
+ * registered theme's background. The roam matters because the theme
+ * switcher flips the <html> class: CSS variables follow instantly, but
+ * layers painted from JS theme values (RN Web atomic classes with literal
+ * colors) keep the PREVIOUS theme's paint until the app reconciles — the
+ * gate must recognize that stale color too, or the wallpaper stays hidden
+ * after every switch away from whichever theme matched at startup.
+ */
 function collectWindowBaseColors(): Set<string> {
   const colors = new Set<string>(["rgb(242, 242, 242)"]);
   try {
@@ -622,9 +630,35 @@ function collectWindowBaseColors(): Set<string> {
     const rgb = background !== "" ? hexToRgbString(background) : null;
     if (rgb !== null) colors.add(rgb);
   } catch {
-    // Keep the constant fallback.
+    // Fall through to the sheet scan for the registered values.
+  }
+  for (const value of collectThemeBackgroundValues()) {
+    const rgb = hexToRgbString(value);
+    if (rgb !== null) colors.add(rgb);
   }
   return colors;
+}
+
+/** Every --colors-background value defined across the host's per-theme
+ * `:root.<name>` rules (theme classes are all on <html>, so one scan of the
+ * sheet sees them all regardless of the active theme). */
+function collectThemeBackgroundValues(): readonly string[] {
+  const tag = document.getElementById("unistyles-web");
+  if (tag === null) return [];
+  const sheet = (
+    tag as unknown as { readonly sheet?: { readonly cssRules: readonly HostStyleRule[] | null } }
+  ).sheet;
+  const values: string[] = [];
+  const walk = (rules: readonly HostStyleRule[] | null): void => {
+    if (rules === null) return;
+    for (const rule of rules) {
+      const match = /--colors-background:\s*([^;]+);/u.exec(rule.cssText);
+      if (match !== null) values.push(match[1].trim());
+      walk(rule.cssRules ?? null);
+    }
+  };
+  walk(sheet?.cssRules ?? null);
+  return values;
 }
 
 function hexToRgbString(hex: string): string | null {
