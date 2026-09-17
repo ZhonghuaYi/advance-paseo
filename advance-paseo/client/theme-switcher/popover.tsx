@@ -6,6 +6,7 @@
 
 import { useCallback, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import type { PluginButtonContentProps } from "@getpaseo/plugin/client";
 import { useText } from "../i18n/store";
 import { readHostThemeSignals } from "../wallpaper/engine";
@@ -143,6 +144,9 @@ const FAMILY_PALETTES = {
 export function ThemeSwitcherPopover(props: PluginButtonContentProps) {
   const { layout, close } = props;
   const t = useText();
+  // The injected client is only the walk's entry point; the patch lands on
+  // the app-level client the walk locates (see app-theme.ts).
+  const queryClient = useQueryClient();
   // Re-read on every mount so a freshly opened popover reflects the current
   // preference even if it changed through the app's own appearance settings.
   const [preference, setPreference] = useState(() => readAppThemePreference());
@@ -153,7 +157,7 @@ export function ThemeSwitcherPopover(props: PluginButtonContentProps) {
     (option: BuiltinThemeOption) => {
       const next = { theme: option.preference, pluginThemeId: null };
       // Appearance only matters for plugin themes; built-ins ignore it.
-      if (!applyAppThemePreference(next, "light")) {
+      if (!applyAppThemePreference(queryClient, next, "light")) {
         setFailed(true);
         return;
       }
@@ -166,7 +170,7 @@ export function ThemeSwitcherPopover(props: PluginButtonContentProps) {
   const selectPluginTheme = useCallback(
     (option: PluginThemeOption) => {
       const next = { theme: option.preference, pluginThemeId: option.pluginThemeId };
-      if (!applyAppThemePreference(next, option.appearance)) {
+      if (!applyAppThemePreference(queryClient, next, option.appearance)) {
         setFailed(true);
         return;
       }

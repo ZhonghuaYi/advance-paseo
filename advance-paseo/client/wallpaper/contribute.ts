@@ -5,6 +5,7 @@
 
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import {
+  wallpaperDebugRpc,
   wallpaperReadPathRpc,
   wallpaperReadRpc,
   wallpaperSettingsRpc,
@@ -15,6 +16,7 @@ import {
   engineStateOf,
   installWallpaperEngine,
   removeWallpaperEngine,
+  setWallpaperDiagnosticsSink,
   setWallpaperImages,
 } from "./engine";
 import { resolveWallpaperImagesWith, type WallpaperReader } from "./loader";
@@ -81,8 +83,15 @@ export function contributeWallpaper(client: PluginClientContext): () => void {
   let disposed = false;
   void initWallpaperRuntime(client, () => disposed);
 
+  // TEMPORARY: route engine transition snapshots into the daemon log for the
+  // "wallpaper missing on indigo" investigation. Remove after use.
+  setWallpaperDiagnosticsSink((report) => {
+    void client.rpc(wallpaperDebugRpc, { report }).catch(() => undefined);
+  });
+
   return () => {
     disposed = true;
+    setWallpaperDiagnosticsSink(null);
     removeWallpaperEngine();
   };
 }

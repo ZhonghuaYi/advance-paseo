@@ -129,6 +129,54 @@ interface WallpaperController {
 
 let controller: WallpaperController | null = null;
 
+/** TEMPORARY diagnostics sink (contribute.ts routes it to the daemon log).
+ * Remove after the theme-switch investigation closes. */
+let diagnosticsSink: ((report: string) => void) | null = null;
+export function setWallpaperDiagnosticsSink(
+  sink: ((report: string) => void) | null,
+): void {
+  diagnosticsSink = sink;
+}
+
+/** TEMPORARY: post-transition state snapshot for the indigo investigation. */
+function reportDiagnostics(): void {
+  if (diagnosticsSink === null || typeof document === "undefined") return;
+  const current = controller;
+  if (current === null) return;
+  const lines: string[] = [];
+  const doc = document.documentElement;
+  const push = (line: string) => lines.push(line);
+
+  push(`class="${doc.getAttribute("class") ?? ""}"`);
+  push(`rootAttr=${doc.getAttribute(ROOT_ATTRIBUTE)}`);
+  const imageVar = doc.style.getPropertyValue(IMAGE_PROPERTY);
+  push(`imageVar=${imageVar === "" ? "(empty)" : imageVar.slice(0, 46)}`);
+  push(`enabled=${current.state.enabled} mode=${current.state.mode}`);
+  push(
+    `slots light=${current.images.light !== null} dark=${current.images.dark !== null}`,
+  );
+  const signals = readHostThemeSignals();
+  push(
+    `signals plugin=${signals.pluginTheme} builtin=${signals.builtinTheme} osDark=${signals.prefersDark}`,
+  );
+  push(`detected=${current.mode} appliedKey=${current.appliedKey}`);
+  const htmlStyle = window.getComputedStyle(doc);
+  push(`html bg=${htmlStyle.backgroundColor} img=${htmlStyle.backgroundImage.slice(0, 70)}`);
+  push(`shellClasses=${current.shellClasses.length}`);
+  let covers = 0;
+  let coversSample = "";
+  for (const element of current.decorated) {
+    if (element.hasAttribute(OPAQUE_COVER_ATTRIBUTE)) {
+      covers += 1;
+      const bg = window.getComputedStyle(element).backgroundColor;
+      if (coversSample.length < 120) coversSample += ` [${bg}]`;
+    }
+  }
+  push(`markedCovers=${covers}${coversSample}`);
+
+  diagnosticsSink(lines.join("\n"));
+}
+
 function styleOptionsOf(state: WallpaperEngineState) {
   return { scrim: state.scrim, accent: state.accent, blur: state.blur };
 }
@@ -310,6 +358,7 @@ function installController(): void {
         : null;
     if (effectiveMode !== null) decorateGlassSurfaces(instance.decorated);
     applyMode(instance, effectiveMode);
+    reportDiagnosticsSoon();
   };
 
   /**
@@ -329,6 +378,19 @@ function installController(): void {
         ? detected
         : null;
     applyMode(instance, effectiveMode);
+    reportDiagnosticsSoon();
+  };
+
+  /** TEMPORARY: ship a state snapshot ~600ms after a theme transition so the
+   * "wallpaper missing on indigo" investigation reads the settled DOM.
+   * Remove after the investigation closes. */
+  let diagTimer: number | null = null;
+  const reportDiagnosticsSoon = () => {
+    if (diagTimer !== null) window.clearTimeout(diagTimer);
+    diagTimer = window.setTimeout(() => {
+      diagTimer = null;
+      void reportDiagnostics();
+    }, 600);
   };
 
   const schedule = (delay: number) => {
