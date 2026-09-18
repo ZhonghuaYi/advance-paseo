@@ -226,9 +226,16 @@ export function setWallpaperImages(images: WallpaperImages): void {
   current.reschedule(0);
 }
 
-/** Remove any installed wallpaper controller. Safe to call when none exists. */
+/**
+ * Tear the engine down when this is the last installation; otherwise just
+ * drop this installation's reference. Safe to call when none exists.
+ */
 export function removeWallpaperEngine(): void {
   if (typeof document === "undefined") return;
+  if (installRefCount > 0) {
+    installRefCount -= 1;
+    return;
+  }
   const style = document.getElementById(STYLE_ID);
   const cleanup: unknown = style ? Reflect.get(style, CLEANUP_PROPERTY) : null;
   if (typeof cleanup === "function") cleanup();
@@ -246,6 +253,18 @@ function purgeOrphanStyles(): void {
     if (orphan instanceof HTMLElement) orphan.remove();
   }
 }
+
+/**
+ * The host installs the plugin once per host connection, so the client
+ * bundle (and this engine) can be installed multiple times in the SAME
+ * window. Parallel controllers over the shared <html> state used to race:
+ * one installation's teardown stripped the attributes another instance had
+ * just written, and the survivor's appliedKey cache made it never rewrite —
+ * the "wallpaper gone after switching themes" state. The engine is
+ * inherently per-document, so installations now SHARE one controller via a
+ * reference count; only the last one out tears it down.
+ */
+let installRefCount = 0;
 
 /**
  * The whole architecture rides on the host exposing its surface colors as
@@ -274,7 +293,10 @@ export function installWallpaperEngine(
 ): PluginThemeContribution {
   if (typeof document === "undefined") return theme;
 
-  removeWallpaperEngine();
+  if (controller !== null) {
+    installRefCount += 1;
+    return theme;
+  }
 
   // Unistyles configures its variables during app bootstrap; retry once in
   // case the plugin client starts first.
@@ -283,6 +305,7 @@ export function installWallpaperEngine(
     return theme;
   }
   window.setTimeout(() => {
+    if (controller !== null) return;
     if (hostExposesSurfaceVariables()) {
       installController();
     } else {
@@ -321,6 +344,7 @@ function installController(): void {
     reschedule: () => {},
   };
   controller = instance;
+  installRefCount = 1;
 
   const refreshShellClasses = () => {
     const discovered = discoverSurface0ShellClasses();
@@ -831,15 +855,25 @@ function wallpaperUrlFor(instance: WallpaperController, mode: WallpaperMode): st
 function applyMode(instance: WallpaperController, mode: WallpaperMode | null): void {
   const url = mode === null ? "" : wallpaperUrlFor(instance, mode);
   const key = mode === null ? "off" : `${mode}:${url}`;
-  if (key === instance.appliedKey) return;
+  const doc = document.documentElement;
+  // Self-heal: the appliedKey cache only shortcuts when the DOM actually
+  // agrees. Parallel installations (before the shared-instance fix) or any
+  // external writer can strip these attributes; trusting the cache alone
+  // then left the wallpaper off forever. Verifying is two cheap reads.
+  const domAgrees =
+    mode === null
+      ? doc.getAttribute(ROOT_ATTRIBUTE) === null
+      : doc.getAttribute(ROOT_ATTRIBUTE) === mode &&
+        doc.style.getPropertyValue(IMAGE_PROPERTY) !== "";
+  if (key === instance.appliedKey && domAgrees) return;
   instance.appliedKey = key;
 
   if (mode === null) {
-    document.documentElement.removeAttribute(ROOT_ATTRIBUTE);
-    document.documentElement.style.removeProperty(IMAGE_PROPERTY);
+    doc.removeAttribute(ROOT_ATTRIBUTE);
+    doc.style.removeProperty(IMAGE_PROPERTY);
     return;
   }
 
-  document.documentElement.setAttribute(ROOT_ATTRIBUTE, mode);
-  document.documentElement.style.setProperty(IMAGE_PROPERTY, `url("${url}")`);
+  doc.setAttribute(ROOT_ATTRIBUTE, mode);
+  doc.style.setProperty(IMAGE_PROPERTY, `url("${url}")`);
 }
