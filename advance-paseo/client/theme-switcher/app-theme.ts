@@ -22,7 +22,7 @@
 // (pluginLight/pluginDark, or a built-in name) plus the storage write; the
 // app then reconciles on its next settings read or launch.
 
-import { ALL_THEME_CLASSES, type AppThemePreference } from "./catalog";
+import type { AppThemePreference } from "./catalog";
 
 export const APP_SETTINGS_STORAGE_KEY = "app-settings";
 const APP_SETTINGS_QUERY_KEY: readonly unknown[] = ["app-settings"];
@@ -127,12 +127,16 @@ function collectAncestorQueryClients(element: HTMLElement): readonly unknown[] {
   return clients;
 }
 
-/** Any stable app-chrome element rendered inside the app's provider tree. */
-function findAppChromeElement(): HTMLElement | null {
-  if (typeof document === "undefined") return null;
-  return document.querySelector(
-    '[data-testid="sidebar-search"], [data-testid="workspace-tabs-row"], [data-testid="settings-sidebar"], [data-testid="sidebar-project-list"]',
-  );
+/** Stable app-chrome elements rendered inside the app's provider tree. */
+function findAppChromeElements(): readonly HTMLElement[] {
+  if (typeof document === "undefined") return [];
+  const anchors: HTMLElement[] = [];
+  for (const element of document.querySelectorAll(
+    '[data-testid="sidebar-search"], [data-testid="workspace-tabs-row"], [data-testid="settings-sidebar"], [data-testid="sidebar-project-list"], [data-testid="agent-chat-scroll"]',
+  )) {
+    if (element instanceof HTMLElement) anchors.push(element);
+  }
+  return anchors;
 }
 
 /**
@@ -172,8 +176,10 @@ function collectProvidedQueryClients(): readonly unknown[] {
 /** TEMPORARY observability for the fiber-walk investigation. Remove after
  * the theme-switch investigation closes. */
 export interface WalkOutcome {
-  readonly path: "cache" | "fallback";
+  readonly path: "cache" | "reload";
   readonly locator: "climb" | "bfs" | "none";
+  readonly anchorFound: boolean;
+  readonly climbed: number;
   readonly candidates: number;
   readonly foreignClients: number;
   readonly holdingDocument: boolean;
@@ -184,12 +190,13 @@ export function getLastWalkOutcome(): WalkOutcome | null {
 }
 
 function findAppQueryClient(ownClient: unknown): AppSettingsQueryClient | null {
-  const anchor = findAppChromeElement();
-  if (anchor !== null) {
-    const climbed = collectAncestorQueryClients(anchor);
-    const picked = pickAppQueryClient(climbed, ownClient);
-    if (picked !== null) return picked;
+  const anchors = findAppChromeElements();
+  const climbedAll: unknown[] = [];
+  for (const anchor of anchors) {
+    climbedAll.push(...collectAncestorQueryClients(anchor));
   }
+  const picked = pickAppQueryClient(climbedAll, ownClient);
+  if (picked !== null) return picked;
   return pickAppQueryClient(collectProvidedQueryClients(), ownClient);
 }
 
@@ -274,14 +281,6 @@ export function themeClassFor(
   }
 }
 
-/** Fallback application when the app-level cache is unreachable. */
-function flipThemeClass(themeClass: string | null): void {
-  if (typeof document === "undefined") return;
-  const classList = document.documentElement.classList;
-  for (const name of ALL_THEME_CLASSES) classList.remove(name);
-  if (themeClass !== null) classList.add(themeClass);
-}
-
 /**
  * Switch the active theme by writing the app's own settings pipeline:
  * merge the patch into the APP-level cache (the appearance provider
@@ -308,16 +307,21 @@ export function applyAppThemePreference(
   const foreign = candidates.filter(
     (candidate) => candidate !== queryClient && isQueryClientLike(candidate),
   );
-  const anchor = findAppChromeElement();
-  const climbedClients = anchor !== null ? collectAncestorQueryClients(anchor) : [];
+  const anchors = findAppChromeElements();
+  const climbedClients = anchors.flatMap((anchor) => collectAncestorQueryClients(anchor));
+  const climbedForeign = climbedClients.filter(
+    (client) => client !== queryClient && isQueryClientLike(client),
+  );
   lastWalkOutcome = {
-    path: appClient !== null ? "cache" : "fallback",
+    path: appClient !== null ? "cache" : "reload",
     locator:
-      appClient !== null && climbedClients.length > 0
+      appClient !== null && climbedForeign.length > 0
         ? "climb"
         : appClient !== null
           ? "bfs"
           : "none",
+    anchorFound: anchors.length > 0,
+    climbed: climbedClients.length,
     candidates: candidates.length,
     foreignClients: foreign.length,
     holdingDocument:
@@ -326,19 +330,23 @@ export function applyAppThemePreference(
       ) !== undefined,
   };
 
-  if (appClient !== null) {
-    appClient.setQueryData(APP_SETTINGS_QUERY_KEY, next);
-  } else {
-    // The app-level client could not be located (host layout change):
-    // flip the class so the visuals still apply; the app reconciles the
-    // runtime state on its next theme operation or launch.
-    flipThemeClass(themeClassFor(preference, contributedAppearance));
-  }
-
   try {
     localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify(next));
   } catch {
     return false;
   }
+
+  if (appClient !== null) {
+    appClient.setQueryData(APP_SETTINGS_QUERY_KEY, next);
+    return true;
+  }
+
+  // The app-level client is unreachable at runtime (whole-tree scans prove
+  // the provider is not discoverable from plugin code). A live class flip
+  // only moves CSS variables — text and accent colors come from the app's
+  // JS theme and stay stale, which reads as a half-applied switch. Reload
+  // instead: the app boots, reads the persisted preference, and applies it
+  // through exactly the pipeline its own appearance settings use.
+  location.reload();
   return true;
 }

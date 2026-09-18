@@ -234,3 +234,9 @@ declare const localStorage: {
 declare const navigator: {
   readonly language: string | undefined;
 };
+
+// --- Theme-switcher reload fallback (client/theme-switcher only) ---
+
+declare const location: {
+  reload(): void;
+};
