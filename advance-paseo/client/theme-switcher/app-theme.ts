@@ -79,6 +79,8 @@ export function pickAppQueryClient(
 interface FiberNode {
   child?: FiberNode | null;
   sibling?: FiberNode | null;
+  /** Parent fiber. Named "return" in the reconciler. */
+  return?: FiberNode | null;
   memoizedProps?: unknown;
 }
 
@@ -86,6 +88,52 @@ interface FiberNode {
 const FIBER_CONTAINER_PREFIX = "__reactContainer$";
 /** Hard cap on visited fibers; the app provider sits near the root anyway. */
 const MAX_FIBER_VISITS = 30_000;
+
+/** React attaches this key prefix to every DOM node it manages. */
+const FIBER_NODE_PREFIX = "__reactFiber$";
+
+/**
+ * Climb the fiber tree from an app-chrome element to the root, collecting
+ * every provided query client on the way (deepest first). This is the
+ * reliable locator: an app-chrome element (workspace sidebar, tab strip,
+ * settings sidebar) necessarily sits BELOW the app-level
+ * QueryClientProvider, so the climb meets it within ~tens of hops. The
+ * breadth-first scan below drowned in the wide app tree (16k+ fibers
+ * without reaching the provider) and is kept only as a fallback.
+ */
+function collectAncestorQueryClients(element: HTMLElement): readonly unknown[] {
+  const container = element as unknown as Record<string, unknown>;
+  let node: FiberNode | null = null;
+  for (const key of Object.keys(container)) {
+    if (key.startsWith(FIBER_NODE_PREFIX)) {
+      const value = container[key];
+      if (typeof value === "object" && value !== null) {
+        node = value as FiberNode;
+        break;
+      }
+    }
+  }
+
+  const clients: unknown[] = [];
+  let hops = 0;
+  while (node !== null && hops < 200) {
+    const props = node.memoizedProps;
+    if (props !== null && typeof props === "object" && "client" in props) {
+      clients.push((props as Record<string, unknown>).client);
+    }
+    node = node.return ?? null;
+    hops += 1;
+  }
+  return clients;
+}
+
+/** Any stable app-chrome element rendered inside the app's provider tree. */
+function findAppChromeElement(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  return document.querySelector(
+    '[data-testid="sidebar-search"], [data-testid="workspace-tabs-row"], [data-testid="settings-sidebar"], [data-testid="sidebar-project-list"]',
+  );
+}
 
 /**
  * Query clients provided anywhere in the rendered tree, shallowest first.
@@ -125,6 +173,7 @@ function collectProvidedQueryClients(): readonly unknown[] {
  * the theme-switch investigation closes. */
 export interface WalkOutcome {
   readonly path: "cache" | "fallback";
+  readonly locator: "climb" | "bfs" | "none";
   readonly candidates: number;
   readonly foreignClients: number;
   readonly holdingDocument: boolean;
@@ -135,6 +184,12 @@ export function getLastWalkOutcome(): WalkOutcome | null {
 }
 
 function findAppQueryClient(ownClient: unknown): AppSettingsQueryClient | null {
+  const anchor = findAppChromeElement();
+  if (anchor !== null) {
+    const climbed = collectAncestorQueryClients(anchor);
+    const picked = pickAppQueryClient(climbed, ownClient);
+    if (picked !== null) return picked;
+  }
   return pickAppQueryClient(collectProvidedQueryClients(), ownClient);
 }
 
@@ -253,8 +308,16 @@ export function applyAppThemePreference(
   const foreign = candidates.filter(
     (candidate) => candidate !== queryClient && isQueryClientLike(candidate),
   );
+  const anchor = findAppChromeElement();
+  const climbedClients = anchor !== null ? collectAncestorQueryClients(anchor) : [];
   lastWalkOutcome = {
     path: appClient !== null ? "cache" : "fallback",
+    locator:
+      appClient !== null && climbedClients.length > 0
+        ? "climb"
+        : appClient !== null
+          ? "bfs"
+          : "none",
     candidates: candidates.length,
     foreignClients: foreign.length,
     holdingDocument:
