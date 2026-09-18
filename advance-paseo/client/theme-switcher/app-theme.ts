@@ -85,7 +85,7 @@ interface FiberNode {
 /** react-dom marks the createRoot container with this key prefix. */
 const FIBER_CONTAINER_PREFIX = "__reactContainer$";
 /** Hard cap on visited fibers; the app provider sits near the root anyway. */
-const MAX_FIBER_VISITS = 4_000;
+const MAX_FIBER_VISITS = 30_000;
 
 /**
  * Query clients provided anywhere in the rendered tree, shallowest first.
@@ -119,6 +119,19 @@ function collectProvidedQueryClients(): readonly unknown[] {
     if (fiber.sibling) queue.push(fiber.sibling);
   }
   return candidates;
+}
+
+/** TEMPORARY observability for the fiber-walk investigation. Remove after
+ * the theme-switch investigation closes. */
+export interface WalkOutcome {
+  readonly path: "cache" | "fallback";
+  readonly candidates: number;
+  readonly foreignClients: number;
+  readonly holdingDocument: boolean;
+}
+let lastWalkOutcome: WalkOutcome | null = null;
+export function getLastWalkOutcome(): WalkOutcome | null {
+  return lastWalkOutcome;
 }
 
 function findAppQueryClient(ownClient: unknown): AppSettingsQueryClient | null {
@@ -234,6 +247,21 @@ export function applyAppThemePreference(
       ? appClient.getQueryData(APP_SETTINGS_QUERY_KEY)
       : readStoredAppSettings();
   const next = mergeAppSettingsTheme(cached ?? readStoredAppSettings(), preference);
+
+  // TEMPORARY: record the walk outcome for the diagnostics channel.
+  const candidates = collectProvidedQueryClients();
+  const foreign = candidates.filter(
+    (candidate) => candidate !== queryClient && isQueryClientLike(candidate),
+  );
+  lastWalkOutcome = {
+    path: appClient !== null ? "cache" : "fallback",
+    candidates: candidates.length,
+    foreignClients: foreign.length,
+    holdingDocument:
+      foreign.find(
+        (client) => (client as QueryClientLike).getQueryData(APP_SETTINGS_QUERY_KEY) !== undefined,
+      ) !== undefined,
+  };
 
   if (appClient !== null) {
     appClient.setQueryData(APP_SETTINGS_QUERY_KEY, next);

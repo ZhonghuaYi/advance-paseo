@@ -27,6 +27,7 @@
 
 import type { PluginThemeContribution } from "@getpaseo/plugin";
 import { WALLPAPER_SETTINGS_DEFAULTS, type WallpaperSettings } from "../../shared/wallpaper";
+import { getLastWalkOutcome } from "../theme-switcher/app-theme";
 import { parseRgba } from "./palettes";
 import {
   resolveWallpaperMode,
@@ -173,6 +174,15 @@ function reportDiagnostics(): void {
     }
   }
   push(`markedCovers=${covers}${coversSample}`);
+
+  // TEMPORARY: how the last theme switch was applied (cache write vs class
+  // flip fallback) — the fallback leaves literal-colored text stale.
+  const walk = getLastWalkOutcome();
+  if (walk !== null) {
+    push(
+      `switchPath=${walk.path} candidates=${walk.candidates} foreign=${walk.foreignClients} holding=${walk.holdingDocument}`,
+    );
+  }
 
   diagnosticsSink(lines.join("\n"));
 }
