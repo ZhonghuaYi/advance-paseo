@@ -39,7 +39,7 @@ const METER_TICK_MS = 1000;
 export function contributeLiveChat(client: PluginClientContext): () => void {
   // The overlays are a progressive-enhancement layer over host DOM; a
   // failure here must never take down the rest of the entry (settings screen,
-  // wallpaper, theme switcher), so every stage is guarded.
+  // wallpaper integration), so every stage is guarded.
   try {
     installLiveChatEngine();
   } catch (error) {

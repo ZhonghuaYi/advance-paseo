@@ -27,7 +27,6 @@
 
 import type { PluginThemeContribution } from "@getpaseo/plugin";
 import { WALLPAPER_SETTINGS_DEFAULTS, type WallpaperSettings } from "../../shared/wallpaper";
-import { getLastWalkOutcome } from "../theme-switcher/app-theme";
 import { parseRgba } from "./palettes";
 import {
   resolveWallpaperMode,
@@ -129,63 +128,6 @@ interface WallpaperController {
 }
 
 let controller: WallpaperController | null = null;
-
-/** TEMPORARY diagnostics sink (contribute.ts routes it to the daemon log).
- * Remove after the theme-switch investigation closes. */
-let diagnosticsSink: ((report: string) => void) | null = null;
-export function setWallpaperDiagnosticsSink(
-  sink: ((report: string) => void) | null,
-): void {
-  diagnosticsSink = sink;
-}
-
-/** TEMPORARY: post-transition state snapshot for the indigo investigation. */
-function reportDiagnostics(): void {
-  if (diagnosticsSink === null || typeof document === "undefined") return;
-  const current = controller;
-  if (current === null) return;
-  const lines: string[] = [];
-  const doc = document.documentElement;
-  const push = (line: string) => lines.push(line);
-
-  push(`class="${doc.getAttribute("class") ?? ""}"`);
-  push(`rootAttr=${doc.getAttribute(ROOT_ATTRIBUTE)}`);
-  const imageVar = doc.style.getPropertyValue(IMAGE_PROPERTY);
-  push(`imageVar=${imageVar === "" ? "(empty)" : imageVar.slice(0, 46)}`);
-  push(`enabled=${current.state.enabled} mode=${current.state.mode}`);
-  push(
-    `slots light=${current.images.light !== null} dark=${current.images.dark !== null}`,
-  );
-  const signals = readHostThemeSignals();
-  push(
-    `signals plugin=${signals.pluginTheme} builtin=${signals.builtinTheme} osDark=${signals.prefersDark}`,
-  );
-  push(`detected=${current.mode} appliedKey=${current.appliedKey}`);
-  const htmlStyle = window.getComputedStyle(doc);
-  push(`html bg=${htmlStyle.backgroundColor} img=${htmlStyle.backgroundImage.slice(0, 70)}`);
-  push(`shellClasses=${current.shellClasses.length}`);
-  let covers = 0;
-  let coversSample = "";
-  for (const element of current.decorated) {
-    if (element.hasAttribute(OPAQUE_COVER_ATTRIBUTE)) {
-      covers += 1;
-      const bg = window.getComputedStyle(element).backgroundColor;
-      if (coversSample.length < 120) coversSample += ` [${bg}]`;
-    }
-  }
-  push(`markedCovers=${covers}${coversSample}`);
-
-  // TEMPORARY: how the last theme switch was applied (cache write vs class
-  // flip fallback) — the fallback leaves literal-colored text stale.
-  const walk = getLastWalkOutcome();
-  if (walk !== null) {
-    push(
-      `switchPath=${walk.path} candidates=${walk.candidates} foreign=${walk.foreignClients} holding=${walk.holdingDocument}`,
-    );
-  }
-
-  diagnosticsSink(lines.join("\n"));
-}
 
 function styleOptionsOf(state: WallpaperEngineState) {
   return { scrim: state.scrim, accent: state.accent, blur: state.blur };
@@ -392,7 +334,6 @@ function installController(): void {
         : null;
     if (effectiveMode !== null) decorateGlassSurfaces(instance.decorated);
     applyMode(instance, effectiveMode);
-    reportDiagnosticsSoon();
   };
 
   /**
@@ -412,19 +353,6 @@ function installController(): void {
         ? detected
         : null;
     applyMode(instance, effectiveMode);
-    reportDiagnosticsSoon();
-  };
-
-  /** TEMPORARY: ship a state snapshot ~600ms after a theme transition so the
-   * "wallpaper missing on indigo" investigation reads the settled DOM.
-   * Remove after the investigation closes. */
-  let diagTimer: number | null = null;
-  const reportDiagnosticsSoon = () => {
-    if (diagTimer !== null) window.clearTimeout(diagTimer);
-    diagTimer = window.setTimeout(() => {
-      diagTimer = null;
-      void reportDiagnostics();
-    }, 600);
   };
 
   const schedule = (delay: number) => {
@@ -454,7 +382,7 @@ function installController(): void {
       childList: true,
       subtree: true,
     });
-    // Theme switches flip a class directly on <html> — outside #root.
+    // Theme class changes land on <html>, outside #root.
     instance.rootObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["class"],
@@ -714,8 +642,8 @@ function discoverSurface0ShellClasses(): string[] {
  * Clear root-level covers: full-viewport layers the host paints with a solid
  * window-base color OUTSIDE the CSS-variable redirects (RN Web atomic
  * classes with literal values — the theme's window-background snapshots;
- * diagnostics showed them tracking --colors-background plus one constant
- * #f2f2f2 light layer). They would sit above the canvas and hide the base
+ * they track --colors-background plus one constant #f2f2f2 light layer.
+ * They would sit above the canvas and hide the base
  * coat.
  *
  * Narrow gates keep content cards out: only elements covering at least half
@@ -747,7 +675,7 @@ function markOpaqueCovers(root: HTMLElement, elements: Set<HTMLElement>): void {
  * Window-base paints a cover layer can show: the app's constant light base
  * (#f2f2f2, host bundle), the live theme's background token, AND every other
  * registered theme's background. The roam matters because the theme
- * switcher flips the <html> class: CSS variables follow instantly, but
+ * the host flips the <html> class: CSS variables follow instantly, but
  * layers painted from JS theme values (RN Web atomic classes with literal
  * colors) keep the PREVIOUS theme's paint until the app reconciles — the
  * gate must recognize that stale color too, or the wallpaper stays hidden

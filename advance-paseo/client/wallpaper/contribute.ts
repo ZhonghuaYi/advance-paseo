@@ -5,7 +5,6 @@
 
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import {
-  wallpaperDebugRpc,
   wallpaperReadPathRpc,
   wallpaperReadRpc,
   wallpaperSettingsRpc,
@@ -16,7 +15,6 @@ import {
   engineStateOf,
   installWallpaperEngine,
   removeWallpaperEngine,
-  setWallpaperDiagnosticsSink,
   setWallpaperImages,
 } from "./engine";
 import { resolveWallpaperImagesWith, type WallpaperReader } from "./loader";
@@ -28,7 +26,7 @@ const INIT_RETRY_DELAYS_MS: readonly number[] = [1_000, 2_000, 4_000, 8_000];
 /**
  * Apply persisted preferences and wallpaper images as soon as the host can
  * serve them. Retried with backoff: the contribution can run before the
- * client's connection is ready (the theme switcher fights the same race), and
+ * client's connection is ready, and
  * a transient file-read failure must not leave the engine imageless until the
  * settings screen happens to be opened. Every step is idempotent, so a retry
  * after a partial success just re-applies the same state.
@@ -83,15 +81,8 @@ export function contributeWallpaper(client: PluginClientContext): () => void {
   let disposed = false;
   void initWallpaperRuntime(client, () => disposed);
 
-  // TEMPORARY: route engine transition snapshots into the daemon log for the
-  // "wallpaper missing on indigo" investigation. Remove after use.
-  setWallpaperDiagnosticsSink((report) => {
-    void client.rpc(wallpaperDebugRpc, { report }).catch(() => undefined);
-  });
-
   return () => {
     disposed = true;
-    setWallpaperDiagnosticsSink(null);
     removeWallpaperEngine();
   };
 }

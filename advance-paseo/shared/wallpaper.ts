@@ -162,11 +162,3 @@ export const wallpaperDeleteRpc = defineRpc({
   output: z.object({ deleted: z.boolean() }),
 });
 
-/** TEMPORARY diagnostics channel for the theme-switch wallpaper investigation;
- * routes a client-side DOM report into the daemon log. Remove after use. */
-export const wallpaperDebugRpc = defineRpc({
-  name: "advance.wallpaper.debug",
-  input: z.object({ report: z.string().max(20_000) }),
-  output: z.object({ ok: z.boolean() }),
-});
-

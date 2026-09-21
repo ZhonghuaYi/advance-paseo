@@ -47,8 +47,8 @@ interface Element {
   readonly children: HTMLElement[];
   addEventListener(type: string, listener: () => void): void;
   removeEventListener(type: string, listener: () => void): void;
-  /** Theme detection and the theme switcher read/flip the active-theme
-   * class on <html>; the full set is known, so only these members are used. */
+  /** Theme detection reads the active theme class on <html>; the full set is
+   * known, so only these members are used. */
   readonly classList: {
     contains(token: string): boolean;
     add(token: string): void;
@@ -180,8 +180,8 @@ declare const document: {
   ): void;
 };
 
-/** Read-only computed-style fields the settings-card fingerprint, the
- * capability gate, and the temporary diagnostics read. */
+/** Read-only computed-style fields used by the settings-card fingerprint and
+ * capability gate. */
 interface AdvanceComputedStyle {
   readonly backgroundColor: string;
   readonly backgroundImage: string;
@@ -222,21 +222,8 @@ declare const Blob: {
 
 declare function atob(data: string): string;
 
-// --- App-settings persistence surface (theme switcher only) ---
-
-declare const localStorage: {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-};
-
 // --- Locale detection surface (client/web.ts only) ---
 
 declare const navigator: {
   readonly language: string | undefined;
-};
-
-// --- Theme-switcher reload fallback (client/theme-switcher only) ---
-
-declare const location: {
-  reload(): void;
 };

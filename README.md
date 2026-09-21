@@ -24,6 +24,8 @@ mobile keeps native surfaces). Successor to
 [paseo-miku-theme](https://github.com/ZhonghuaYi/paseo-miku-theme), shipping
 its own neutral theme pair — *Advance Cream* (light) / *Advance Indigo*
 (dark) — that stays balanced under arbitrary wallpapers.
+Select either theme from Paseo's Settings → Appearance page; Paseo owns
+persistence and fallback when a contributing host is unavailable.
 
 - **Import & manage**: pick images in the settings screen; they are downscaled
   to ≤2560 px and re-encoded as WebP in the app, then stored daemon-side under
@@ -64,20 +66,6 @@ its own neutral theme pair — *Advance Cream* (light) / *Advance Indigo*
 > popovers, cards) keep their opaque theme colors for readability. Known
 > trade-off: modal backdrops that dim via `surface0` stop dimming while the
 > wallpaper is active.
-
-### Theme switcher（主题切换）
-
-A palette button in the workspace header opens a popover with every built-in
-Paseo theme (light / dark / auto / zinc / midnight / claude / ghostty /
-pure black) and this plugin's contributed themes (Advance Cream / Advance
-Indigo). One click switches immediately.
-
-- Mechanism: Paseo keeps its appearance preference in localStorage under
-  `app-settings` and mirrors it into a react-query cache entry keyed
-  `["app-settings"]`; the popover merges the picked theme into that document
-  through the host-injected react-query instance, exactly like the app's own
-  appearance settings do — so the change applies live and persists. Desktop
-  and web only (native hosts show a hint instead).
 
 ### Providers auto-refresh（providers 自动刷新）
 
