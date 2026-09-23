@@ -37,7 +37,7 @@ describe("buildWallpaperCss", () => {
   it("makes only the discovered shell classes transparent", () => {
     const css = buildWallpaperCss(GRAPHITE_DEFAULT, ["unistyles_abc123", "unistyles_def456"]);
     expect(css).toContain(
-      "html[data-paseo-advance-wallpaper] .unistyles_abc123,\n  .unistyles_def456 {",
+      "html[data-paseo-advance-wallpaper] .unistyles_abc123,\n  html[data-paseo-advance-wallpaper] .unistyles_def456 {",
     );
     expect(css).toContain("background-color: transparent !important");
     // Hostile tokens never reach the selector list.

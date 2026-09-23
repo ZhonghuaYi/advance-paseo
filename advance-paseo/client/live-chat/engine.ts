@@ -1,3 +1,4 @@
+import { isTextOnlyBatch } from "../dom-nodes";
 // DOM controller for the live-chat overlays (web/Electron only).
 //
 // Paseo's plugin UI slots (panels, pills, timeline rows) cannot float over
@@ -74,6 +75,14 @@ export function engineStateOf(settings: LiveChatSettings): LiveChatEngineState {
 export interface LiveDataAdapter {
   /** Begin (or continue) serving data for an agent; return the stop function. */
   subscribeAgent(agentId: string): () => void;
+  refreshDirectory?(): void;
+}
+
+interface HostRegistration {
+  state: LiveChatEngineState;
+  adapter: LiveDataAdapter | null;
+  agents: ReadonlySet<string> | null;
+  interactiveSettings: boolean;
 }
 
 interface PaneBinding {
@@ -82,6 +91,7 @@ interface PaneBinding {
   readonly card: HTMLElement;
   readonly meter: HTMLElement;
   agentId: string | null;
+  hostKey: string | null;
   collapsed: boolean;
   /** Inputs of the last render; a mismatch forces a re-render. */
   rendered: {
@@ -94,8 +104,7 @@ interface PaneBinding {
 }
 
 interface Controller {
-  state: LiveChatEngineState;
-  adapter: LiveDataAdapter | null;
+  hosts: Map<string, HostRegistration>;
   bindings: Map<HTMLElement, PaneBinding>;
   /** agentId → data subscription stopper. */
   dataSubs: Map<string, () => void>;
@@ -114,7 +123,14 @@ interface Controller {
   stopped: boolean;
 }
 
+const REGISTRY = "__advanceLiveController";
+const HOST_KEY = Math.random().toString(36).slice(2);
 let controller: Controller | null = null;
+const dataKey = (hostKey: string, agentId: string) => JSON.stringify([hostKey, agentId]);
+const newHost = (): HostRegistration => ({ state: DEFAULT_ENGINE_STATE, adapter: null, agents: null, interactiveSettings: false });
+function stateFor(instance: Controller, binding: PaneBinding): LiveChatEngineState {
+  return instance.hosts.get(binding.hostKey ?? "")?.state ?? DEFAULT_ENGINE_STATE;
+}
 
 /**
  * The injected stylesheet. Colors come from CSS custom properties set per
@@ -122,11 +138,11 @@ let controller: Controller | null = null;
  * every card. The chat-shift rule's pixel value is baked in and the sheet is
  * rebuilt whenever the setting changes.
  */
-function buildStyleSheet(state: LiveChatEngineState): string {
-  const shift =
-    state.chatShift > 0
-      ? `\n${CHAT_SCROLL_SELECTOR}[${CHAT_SHIFT_ATTRIBUTE}] > div:first-child {\n  padding-right: ${state.chatShift}px !important;\n  transition: padding-right 180ms ease !important;\n}\n`
-      : "";
+function buildStyleSheet(): string {
+  const shift = `\n${CHAT_SCROLL_SELECTOR}[${CHAT_SHIFT_ATTRIBUTE}] > div:first-child {
+  padding-right: var(--advance-chat-shift, 0px) !important;
+  transition: padding-right 180ms ease !important;
+}\n`;
   return `[${OVERLAY_ATTRIBUTE}] {
   position: absolute;
   inset: 0;
@@ -287,16 +303,23 @@ const MODE_VARS: Record<WallpaperMode, string> = {
 /** Install the controller; no-op on native hosts. */
 export function installLiveChatEngine(): void {
   if (typeof document === "undefined") return;
-  removeLiveChatEngine();
+  if (controller && !controller.stopped) return;
+  const shared = document.getElementById(STYLE_ID);
+  const existing = shared ? Reflect.get(shared, REGISTRY) as Controller | undefined : undefined;
+  if (existing && !existing.stopped) {
+    controller = existing;
+    existing.hosts.set(HOST_KEY, newHost());
+    reconcile(existing);
+    return;
+  }
 
   const style = document.createElement("style");
   style.id = STYLE_ID;
-  style.textContent = buildStyleSheet(DEFAULT_ENGINE_STATE);
+  style.textContent = buildStyleSheet();
   document.head.append(style);
 
   const instance: Controller = {
-    state: DEFAULT_ENGINE_STATE,
-    adapter: null,
+    hosts: new Map([[HOST_KEY, newHost()]]),
     bindings: new Map(),
     dataSubs: new Map(),
     snapshots: new Map(),
@@ -314,6 +337,7 @@ export function installLiveChatEngine(): void {
     stopped: false,
   };
   controller = instance;
+  Reflect.set(style, REGISTRY, instance);
 
   instance.rootObserver = new MutationObserver((records) => {
     if (instance.stopped) return;
@@ -362,6 +386,19 @@ export function removeLiveChatEngine(): void {
   if (typeof document === "undefined") return;
   const instance = controller;
   if (instance === null) return;
+  instance.hosts.delete(HOST_KEY);
+  for (const [key, stop] of instance.dataSubs) {
+    if ((JSON.parse(key) as string[])[0] !== HOST_KEY) continue;
+    stop();
+    instance.dataSubs.delete(key);
+    instance.snapshots.delete(key);
+    instance.meters.delete(key);
+  }
+  if (instance.hosts.size > 0) {
+    reconcile(instance);
+    controller = null;
+    return;
+  }
   instance.stopped = true;
   if (instance.reconcileTimer !== null) window.clearTimeout(instance.reconcileTimer);
   if (instance.renderTimer !== null) window.clearTimeout(instance.renderTimer);
@@ -382,19 +419,32 @@ export function setLiveDataAdapter(adapter: LiveDataAdapter): void {
   if (typeof document === "undefined") return;
   const instance = controller;
   if (instance === null || instance.stopped) return;
-  instance.adapter = adapter;
+  const host = instance.hosts.get(HOST_KEY);
+  if (!host) return;
+  host.adapter = adapter;
   scheduleReconcile(instance);
 }
 
-/** Apply new settings; rebuilds the sheet (chat-shift px) and re-renders. */
-export function applyLiveChatState(state: LiveChatEngineState): void {
+/** Apply this host's settings; each pane owns its chat-shift variable. */
+export function applyLiveChatState(state: LiveChatEngineState, origin: "settings" | "bootstrap" = "settings"): void {
   if (typeof document === "undefined") return;
   const instance = controller;
   if (instance === null || instance.stopped) return;
-  instance.state = state;
+  const host = instance.hosts.get(HOST_KEY);
+  if (!host || (origin === "bootstrap" && host.interactiveSettings)) return;
+  host.state = state;
+  if (origin === "settings") host.interactiveSettings = true;
   instance.stateVersion += 1;
-  instance.style.textContent = buildStyleSheet(state);
   for (const binding of instance.bindings.values()) renderBinding(instance, binding);
+}
+
+/** Null means ownership is not yet known; never guess a host in that state. */
+export function setLiveAgentDirectory(agents: ReadonlySet<string> | null): void {
+  const instance = controller;
+  const host = instance?.hosts.get(HOST_KEY);
+  if (!instance || instance.stopped || !host) return;
+  host.agents = agents;
+  reconcile(instance);
 }
 
 /** Latest task snapshot for an agent, pushed by the data layer. */
@@ -402,13 +452,13 @@ export function pushTaskSnapshot(agentId: string, snapshot: TaskSnapshot | null)
   const instance = controller;
   if (instance === null || instance.stopped) return;
   if (snapshot === null || snapshot.todos.length === 0) {
-    instance.snapshots.delete(agentId);
+    instance.snapshots.delete(dataKey(HOST_KEY, agentId));
   } else {
-    instance.snapshots.set(agentId, snapshot);
+    instance.snapshots.set(dataKey(HOST_KEY, agentId), snapshot);
   }
   instance.dataVersion += 1;
   for (const binding of instance.bindings.values()) {
-    if (binding.agentId === agentId) renderBinding(instance, binding);
+    if (binding.agentId === agentId && binding.hostKey === HOST_KEY) renderBinding(instance, binding);
   }
 }
 
@@ -417,13 +467,13 @@ export function pushRateMeter(agentId: string, view: RateMeterView | null): void
   const instance = controller;
   if (instance === null || instance.stopped) return;
   if (view === null) {
-    instance.meters.delete(agentId);
+    instance.meters.delete(dataKey(HOST_KEY, agentId));
   } else {
-    instance.meters.set(agentId, view);
+    instance.meters.set(dataKey(HOST_KEY, agentId), view);
   }
   instance.dataVersion += 1;
   for (const binding of instance.bindings.values()) {
-    if (binding.agentId === agentId) renderBinding(instance, binding);
+    if (binding.agentId === agentId && binding.hostKey === HOST_KEY) renderBinding(instance, binding);
   }
 }
 
@@ -459,19 +509,7 @@ function scheduleRender(instance: Controller): void {
   }, RENDER_DEBOUNCE_MS);
 }
 
-function isTextOnlyBatch(records: readonly MutationRecord[]): boolean {
-  if (records.length === 0) return false;
-  return records.every(
-    (record) =>
-      record.type === "childList" &&
-      containsNoElements(record.addedNodes) &&
-      containsNoElements(record.removedNodes),
-  );
-}
 
-function containsNoElements(nodes: readonly unknown[]): boolean {
-  return nodes.every((node) => !(node instanceof HTMLElement));
-}
 
 /**
  * Resolve every visible chat viewport to its pane's active agent and bring
@@ -485,19 +523,26 @@ function reconcile(instance: Controller): void {
   const root = document.getElementById("root");
   const chats =
     (root === null
-      ? document.querySelectorAll(CHAT_SCROLL_SELECTOR)
-      : root.querySelectorAll(CHAT_SCROLL_SELECTOR)) as HTMLElement[];
+      ? document.querySelectorAll<HTMLElement>(CHAT_SCROLL_SELECTOR)
+      : root.querySelectorAll<HTMLElement>(CHAT_SCROLL_SELECTOR));
   const seen = new Set<HTMLElement>();
 
   for (const chat of chats) {
     seen.add(chat);
     let binding = instance.bindings.get(chat);
     if (binding === undefined) {
-      binding = createBinding(chat);
+      binding = createBinding(chat, instance);
       instance.bindings.set(chat, binding);
     }
     const agentId = resolveActiveAgent(binding);
-    if (agentId !== binding.agentId) {
+    const owners = [...instance.hosts].filter(([, host]) => host.agents?.has(agentId ?? ""));
+    const allKnown = [...instance.hosts.values()].every(host => host.agents !== null);
+    const hostKey = allKnown && owners.length === 1 ? owners[0][0] : null;
+    if (agentId && hostKey === null) {
+      for (const host of instance.hosts.values()) host.adapter?.refreshDirectory?.();
+    }
+    if (agentId !== binding.agentId || hostKey !== binding.hostKey) {
+      binding.hostKey = hostKey;
       binding.agentId = agentId;
       binding.rendered = null;
     }
@@ -509,28 +554,31 @@ function reconcile(instance: Controller): void {
     instance.bindings.delete(chat);
   }
 
-  // Keep exactly one data subscription per bound agent.
-  const wanted = new Set<string>();
+  // One stream per (host, agent), shared by all visible panes for that agent.
+  const wanted = new Map<string, { host: HostRegistration; agentId: string }>();
   for (const binding of instance.bindings.values()) {
-    if (binding.agentId !== null) wanted.add(binding.agentId);
+    if (binding.agentId === null || binding.hostKey === null) continue;
+    const host = instance.hosts.get(binding.hostKey);
+    if (host) wanted.set(dataKey(binding.hostKey, binding.agentId), { host, agentId: binding.agentId });
   }
-  for (const agentId of [...instance.dataSubs.keys()]) {
-    if (wanted.has(agentId)) continue;
-    instance.dataSubs.get(agentId)?.();
-    instance.dataSubs.delete(agentId);
+  for (const [key, stop] of instance.dataSubs) {
+    if (wanted.has(key)) continue;
+    stop();
+    instance.dataSubs.delete(key);
+    instance.snapshots.delete(key);
+    instance.meters.delete(key);
   }
-  if (instance.adapter !== null) {
-    for (const agentId of wanted) {
-      if (instance.dataSubs.has(agentId)) continue;
-      instance.dataSubs.set(agentId, instance.adapter.subscribeAgent(agentId));
-    }
+  for (const [key, { host, agentId }] of wanted) {
+    if (instance.dataSubs.has(key) || !host.adapter) continue;
+    try { instance.dataSubs.set(key, host.adapter.subscribeAgent(agentId)); }
+    catch (error) { console.error("[advance-paseo] live chat subscribe failed", error); }
   }
 
   for (const binding of instance.bindings.values()) renderBinding(instance, binding);
 }
 
 /** Create the overlay + card + meter shell for one chat viewport. */
-function createBinding(chat: HTMLElement): PaneBinding {
+function createBinding(chat: HTMLElement, instance: Controller): PaneBinding {
   // The chat viewport wraps agent-chat-scroll with position:relative in the
   // host; walk up a little in case an intermediate wrapper intervenes.
   let host: HTMLElement | null = chat.parentElement;
@@ -564,19 +612,20 @@ function createBinding(chat: HTMLElement): PaneBinding {
     card,
     meter,
     agentId: null,
+    hostKey: null,
     collapsed: false,
     rendered: null,
   };
   card.addEventListener("click", () => {
     binding.collapsed = !binding.collapsed;
-    const current = controller;
-    if (current !== null) renderBinding(current, binding);
+    renderBinding(instance, binding);
   });
   return binding;
 }
 
 function destroyBinding(binding: PaneBinding): void {
   binding.chat.removeAttribute(CHAT_SHIFT_ATTRIBUTE);
+  binding.chat.style.removeProperty("--advance-chat-shift");
   binding.overlay.remove();
 }
 
@@ -590,7 +639,7 @@ function resolveActiveAgent(binding: PaneBinding): string | null {
   if (pane === null) return binding.agentId;
 
   const tabs = [
-    ...(pane.querySelectorAll(`[data-testid^="${AGENT_TAB_PREFIX}"]`) as HTMLElement[]),
+    ...pane.querySelectorAll(`[data-testid^="${AGENT_TAB_PREFIX}"]`),
   ];
   if (tabs.length === 0) return binding.agentId;
 
@@ -638,12 +687,13 @@ function wcagRelativeLuminance(color: readonly [number, number, number, number])
 /** Re-render one binding if any of its inputs changed. */
 function renderBinding(instance: Controller, binding: PaneBinding): void {
   if (instance.stopped) return;
-  const snapshot =
-    binding.agentId === null ? undefined : instance.snapshots.get(binding.agentId);
-  const meterView =
-    binding.agentId === null ? undefined : instance.meters.get(binding.agentId);
-  const cardVisible = instance.state.todoCardEnabled && snapshot !== undefined;
-  const meterVisible = instance.state.rateMeterEnabled && meterView !== undefined;
+  const key = binding.hostKey !== null && binding.agentId !== null
+    ? dataKey(binding.hostKey, binding.agentId) : null;
+  const state = stateFor(instance, binding);
+  const snapshot = key === null ? undefined : instance.snapshots.get(key);
+  const meterView = key === null ? undefined : instance.meters.get(key);
+  const cardVisible = state.todoCardEnabled && snapshot !== undefined;
+  const meterVisible = state.rateMeterEnabled && meterView !== undefined;
   const mode = cardVisible || meterVisible ? detectMode(binding.chat) : null;
 
   if (
@@ -671,7 +721,8 @@ function renderBinding(instance: Controller, binding: PaneBinding): void {
   if (cardVisible && snapshot !== undefined) {
     binding.card.setAttribute("style", vars);
     renderCard(instance, binding, snapshot);
-    if (instance.state.chatShift > 0) {
+    if (state.chatShift > 0) {
+      binding.chat.style.setProperty("--advance-chat-shift", `${state.chatShift}px`);
       binding.chat.setAttribute(CHAT_SHIFT_ATTRIBUTE, "");
     } else {
       binding.chat.removeAttribute(CHAT_SHIFT_ATTRIBUTE);
@@ -698,6 +749,7 @@ function appendTextChild(parent: HTMLElement, className: string, text: string): 
 }
 
 function renderCard(instance: Controller, binding: PaneBinding, snapshot: TaskSnapshot): void {
+  const state = stateFor(instance, binding);
   const card = binding.card;
   // Rebuild content: rows are few and renders are rare.
   while (card.children.length > 0) card.children[0].remove();
@@ -714,7 +766,7 @@ function renderCard(instance: Controller, binding: PaneBinding, snapshot: TaskSn
   }
   card.removeAttribute("data-collapsed");
 
-  if (instance.state.showGoal && snapshot.goal !== null) {
+  if (state.showGoal && snapshot.goal !== null) {
     const goal = document.createElement("div");
     goal.setAttribute("class", "adv-goal");
     const label = document.createElement("div");
@@ -730,7 +782,7 @@ function renderCard(instance: Controller, binding: PaneBinding, snapshot: TaskSn
 
   const list = document.createElement("ul");
   list.setAttribute("class", "adv-todos");
-  const limit = Math.min(instance.state.maxTodoItems, snapshot.todos.length);
+  const limit = Math.min(state.maxTodoItems, snapshot.todos.length);
   for (let index = 0; index < limit; index += 1) {
     const row = snapshot.todos[index];
     const item = document.createElement("li");

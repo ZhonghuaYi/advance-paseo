@@ -19,7 +19,9 @@ import {
   pushTaskSnapshot,
   removeLiveChatEngine,
   setLiveDataAdapter,
+  setLiveAgentDirectory,
 } from "./engine";
+import { watchAgentDirectory } from "./agent-directory";
 import {
   createRateMeterState,
   createTaskFoldState,
@@ -37,6 +39,8 @@ const HISTORY_LIMIT = 80;
 const METER_TICK_MS = 1000;
 
 export function contributeLiveChat(client: PluginClientContext): () => void {
+  if (typeof document === "undefined") return () => {};
+  let disposed = false;
   // The overlays are a progressive-enhancement layer over host DOM; a
   // failure here must never take down the rest of the entry (settings screen,
   // wallpaper integration), so every stage is guarded.
@@ -50,20 +54,26 @@ export function contributeLiveChat(client: PluginClientContext): () => void {
   void client
     .rpc(liveChatSettingsRpc.read, {})
     .then((read) => {
-      if (read.status !== "ready") return;
-      applyLiveChatState(engineStateOf(parseLiveChatSettings(read.values)));
+      if (disposed || read.status !== "ready") return;
+      applyLiveChatState(engineStateOf(parseLiveChatSettings(read.values)), "bootstrap");
     })
     .catch((error) => {
       console.error("[advance-paseo] live chat settings read failed", error);
     });
 
+  let directory: ReturnType<typeof watchAgentDirectory> | undefined;
   try {
-    setLiveDataAdapter({ subscribeAgent: subscribeAgentFactory(client) });
+    directory = watchAgentDirectory(client.paseo, setLiveAgentDirectory);
+    setLiveDataAdapter({ subscribeAgent: subscribeAgentFactory(client), refreshDirectory: directory.refresh });
   } catch (error) {
     console.error("[advance-paseo] live chat adapter setup failed", error);
   }
 
-  return () => removeLiveChatEngine();
+  return () => {
+    disposed = true;
+    directory?.dispose();
+    removeLiveChatEngine();
+  };
 }
 
 function subscribeAgentFactory(client: PluginClientContext) {
@@ -72,6 +82,7 @@ function subscribeAgentFactory(client: PluginClientContext) {
     let meter = createRateMeterState();
     let tick: number | null = null;
     let stopped = false;
+    let historyVersion = 0;
 
     const pushSnapshot = (): void => {
       pushTaskSnapshot(agentId, snapshotOf(fold));
@@ -124,10 +135,11 @@ function subscribeAgentFactory(client: PluginClientContext) {
     const ref = client.paseo.agents.ref(agentId);
 
     const fetchHistory = (): void => {
+      const version = ++historyVersion;
       void ref.timeline
         .refetch({ direction: "tail", limit: HISTORY_LIMIT })
         .then((payload) => {
-          if (stopped) return;
+          if (stopped || version !== historyVersion) return;
           for (const entry of payload.entries) {
             fold = foldTimelineItem(fold, entry.item, entry.seqEnd);
           }

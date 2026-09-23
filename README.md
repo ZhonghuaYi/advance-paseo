@@ -32,11 +32,16 @@ persistence and fallback when a contributing host is unavailable.
   `~/.paseo/advance-paseo/wallpapers/`. Assign one image per light/dark slot.
 - **Path reference**: alternatively point a slot at an image file on the
   daemon machine (read as-is, no copy).
+- Uploads and deletes serialize the complete index transaction. A failed
+  settings save aborts deletion of an assigned image. Image requests are tied
+  to their controller, host and slot selection: old responses cannot replace
+  a newer selection or write after their screen or plugin is disposed.
+  Style-only edits reuse the current images.
 - **Painted surfaces**: the wallpaper paints once behind the whole app (a
   base coat on the html canvas) and shows on every screen — chat, workspace,
   settings (all pages), new-workspace, and future views — because the host's
-  full-bleed surface colors are redirected to transparent at the CSS-variable
-  level. Frosted-glass refinement (backdrop blur + translucent tints) is
+  sidebar/workspace colors and discovered full-bleed surface0 shell classes
+  become transparent. Frosted-glass refinement (backdrop blur + translucent tints) is
   layered on the sidebars, tab strip, settings cards, message cards, code
   blocks, terminals, and diffs.
 - **Activation modes**:
@@ -58,14 +63,27 @@ persistence and fallback when a contributing host is unavailable.
 > CSS, or layer capability, so the wallpaper is a DOM-injection enhancement.
 > It rides on the host's own CSS-variable theming (react-native-unistyles
 > CSSVars mode): the wallpaper paints as the canvas background on `<html>`,
-> and the `--colors-surface0/-sidebar/-workspace` variables are redirected to
-> transparent while the wallpaper is active, so every screen shows it without
-> per-element DOM discovery — nothing a view switch does can cover or flash
-> it. If the host stops exposing those variables, the engine stays dormant
-> and the plain color themes keep working. Elevated surfaces (menus,
-> popovers, cards) keep their opaque theme colors for readability. Known
-> trade-off: modal backdrops that dim via `surface0` stop dimming while the
-> wallpaper is active.
+> and the `--colors-surface-sidebar/-workspace` variables are redirected to
+> transparent while the wallpaper is active. Full-bleed surface0 shells are
+> identified from the host stylesheet and made transparent by class; opaque
+> root covers are marked in the DOM. If the host stops exposing its theme
+> variables, the engine stays dormant and the plain color themes keep working.
+> Popup-shaped surface0 controls and elevated surfaces retain their theme
+> paint unless explicitly styled as glass. All shell overrides stop when the
+> wallpaper is disabled.
+>
+> Multi-host note: plugins install per daemon, so settings and wallpaper
+> files live independently on each machine. The wallpaper layer itself is one
+> DOM injection shared by the whole app window, and it follows the client's
+> host: the FIRST host to initialize after startup — in practice the app's
+> own (local) daemon — owns the window, and background applies from every
+> later-connected host are rejected. Opening a host's Advance settings
+> screen deliberately re-targets the window (live preview must show what you
+> are editing) and that host keeps ownership afterwards; re-open the local
+> host's settings to switch back. When the owning host disconnects, painting
+> stays as-is and the next host to connect may claim the window. The shared
+> engine is reference-counted across host connections and tears down only
+> after the last one disconnects.
 
 ### Providers auto-refresh（providers 自动刷新）
 
@@ -78,6 +96,10 @@ files and triggers `paseo.providers.refresh()` whenever one actually changes.
   (e.g. `~/.codex/config.toml`) in the settings screen.
 - Content is sha256-compared, so no-op rewrites never refresh; save bursts are
   collapsed by a configurable quiet period.
+- Deleting or recreating a watched file also refreshes the catalog. Read
+  permission errors are reported separately and do not count as deletions.
+  Concurrent activation and teardown invalidate old reads and release all
+  watch handles before a replacement activation can take effect.
 - A status card shows armed state, watched-file existence, and the last
   change/refresh/error, plus a manual "refresh now" action.
 
@@ -98,7 +120,10 @@ mobile keeps native surfaces):
 - **Tokens/sec meter** — a small frosted pill at the conversation's bottom
   right showing live output tokens/sec (12 s sliding window over
   `usage_updated` events), the turn's output count, and context-window
-  pressure; the final reading freezes after each turn until the next begins.
+  pressure. While running, the rate decays during pauses and reaches zero
+  after 12 s without an increase once enough samples exist; insufficient
+  samples show an em dash. The final reading freezes after each turn until
+  the next begins.
 - Each pane tracks its own agent: the active tab's test id
   (`workspace-tab-agent_<id>` with `aria-selected`) resolves the binding, a
   single-agent pane binds without the aria signal, and a pane keeps its last
@@ -107,6 +132,13 @@ mobile keeps native surfaces):
   history fetch per binding; seq numbers keep stale history from overwriting
   live updates. Card colors follow the detected light/dark paint under each
   chat, including wallpaper-frosted shells.
+- **Multiple hosts** — one controller owns the window's overlays. Each
+  host supplies its own paginated agent directory, subscriptions and
+  settings; a pane subscribes only when its agent belongs to exactly one
+  connected plugin host. Unknown or conflicting ownership hides the overlay
+  while directories are rechecked. Chat shift is local to each pane. A host
+  disconnect removes only its subscriptions; the shared controller remains
+  until the last host leaves.
 
 ## Install
 
@@ -136,6 +168,7 @@ advance-paseo/              ← the installable plugin directory
   index.server.ts           ← daemon entry: aggregates feature contributions
   client/                   ← app-side code (React Native primitives only)
     dom.d.ts                ← minimal ambient DOM typings (typecheck only)
+    dom-nodes.ts            ← iterable DOM collection helpers
     web.ts                  ← web-only DOM helpers (file picker, canvas, locale)
     settings-screen.tsx     ← one section per feature
     ui/                     ← shared plugin-local widgets (slider row)
@@ -188,6 +221,10 @@ entries stay dumb aggregators.
 
 Verify with `npm run typecheck && npm test`, then
 `paseo plugin reload advance-paseo` and `paseo plugin logs advance-paseo`.
+Tests include jsdom mutation/stylesheet checks, separate host bundle
+instances sharing one document, settings component failures, temporary-file
+storage transactions, and deterministic watcher/timer races. The DOM and
+component test dependencies are development-only.
 
 ## Development workflow
 

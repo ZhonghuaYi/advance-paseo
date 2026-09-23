@@ -25,6 +25,11 @@ interface AdvanceMutationObserverInit {
   attributeFilter?: string[];
 }
 
+interface AdvanceNodeList<T> extends Iterable<T> {
+  readonly length: number;
+  readonly [index: number]: T;
+}
+
 interface Element {
   id: string;
   tagName: string;
@@ -41,10 +46,10 @@ interface Element {
   closest<T extends Element = Element>(selector: string): T | null;
   matches(selector: string): boolean;
   querySelector<T extends Element = Element>(selector: string): T | null;
-  querySelectorAll<T extends Element = Element>(selector: string): T[];
+  querySelectorAll<T extends Element = Element>(selector: string): AdvanceNodeList<T>;
   getBoundingClientRect(): AdvanceDomRect;
   readonly parentElement: HTMLElement | null;
-  readonly children: HTMLElement[];
+  readonly children: AdvanceNodeList<HTMLElement>;
   addEventListener(type: string, listener: () => void): void;
   removeEventListener(type: string, listener: () => void): void;
   /** Theme detection reads the active theme class on <html>; the full set is
@@ -71,8 +76,8 @@ interface MutationRecord {
   readonly type: string;
   readonly target: Element;
   readonly attributeName: string | null;
-  readonly addedNodes: readonly unknown[];
-  readonly removedNodes: readonly unknown[];
+  readonly addedNodes: AdvanceNodeList<unknown>;
+  readonly removedNodes: AdvanceNodeList<unknown>;
 }
 
 interface MutationObserver {
@@ -159,7 +164,7 @@ interface AdvanceEventLike {
 declare const document: {
   getElementById(id: string): HTMLElement | null;
   querySelector(selector: string): HTMLElement | null;
-  querySelectorAll<T extends Element = Element>(selector: string): T[];
+  querySelectorAll<T extends Element = Element>(selector: string): AdvanceNodeList<T>;
   readonly documentElement: HTMLElement;
   readonly head: Element;
   readonly body: Element;

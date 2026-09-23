@@ -47,8 +47,6 @@ interface StoreIndex {
   items: Record<string, WallpaperMeta>;
 }
 
-const EMPTY_INDEX: StoreIndex = { version: 1, items: {} };
-
 async function readIndex(dir: string): Promise<StoreIndex> {
   try {
     const raw = await fs.readFile(path.join(dir, "index.json"), "utf8");
@@ -59,20 +57,30 @@ async function readIndex(dir: string): Promise<StoreIndex> {
   } catch {
     // Missing or corrupt index: start fresh rather than fail every RPC.
   }
-  return EMPTY_INDEX;
+  return { version: 1, items: {} };
 }
 
-/** Serialized index writes so concurrent uploads cannot lose entries. */
-let indexQueue: Promise<unknown> = Promise.resolve();
+/** Serialize the complete transaction, including its read, per data directory. */
+const indexQueues = new Map<string, Promise<unknown>>();
 
-function writeIndex(dir: string, index: StoreIndex): Promise<void> {
-  const task = indexQueue.then(async () => {
-    const tmp = path.join(dir, "index.json.tmp");
+function transact<T>(dir: string, run: () => Promise<T>): Promise<T> {
+  const task = (indexQueues.get(dir) ?? Promise.resolve()).then(run);
+  const tail = task.catch(() => {});
+  indexQueues.set(dir, tail);
+  void tail.then(() => {
+    if (indexQueues.get(dir) === tail) indexQueues.delete(dir);
+  });
+  return task;
+}
+
+async function writeIndex(dir: string, index: StoreIndex): Promise<void> {
+  const tmp = path.join(dir, `index.${randomUUID()}.tmp`);
+  try {
     await fs.writeFile(tmp, JSON.stringify(index, null, 2), "utf8");
     await fs.rename(tmp, path.join(dir, "index.json"));
-  });
-  indexQueue = task.catch(() => {});
-  return task;
+  } finally {
+    await fs.rm(tmp, { force: true }).catch(() => {});
+  }
 }
 
 function parseDataUrl(dataUrl: string): { mime: string; bytes: Buffer } {
@@ -118,9 +126,16 @@ export async function uploadWallpaper(input: RpcInput<typeof wallpaperUploadRpc>
     addedAt: new Date().toISOString(),
   };
 
-  const index = await readIndex(dir);
-  index.items[id] = meta;
-  await writeIndex(dir, index);
+  try {
+    await transact(dir, async () => {
+      const index = await readIndex(dir);
+      index.items[id] = meta;
+      await writeIndex(dir, index);
+    });
+  } catch (error) {
+    await fs.rm(file, { force: true }).catch(() => {});
+    throw error;
+  }
   console.log(
     `[advance-paseo] stored wallpaper "${meta.name}" (${(meta.bytes / 1024).toFixed(0)} KiB, ${mime})`,
   );
@@ -161,17 +176,19 @@ export async function deleteWallpaper(input: RpcInput<typeof wallpaperDeleteRpc>
   deleted: boolean;
 }> {
   const dir = dataRoot();
-  const index = await readIndex(dir);
-  const meta = index.items[input.id];
-  if (!meta) return { deleted: false };
+  return transact(dir, async () => {
+    const index = await readIndex(dir);
+    const meta = index.items[input.id];
+    if (!meta) return { deleted: false };
 
-  delete index.items[input.id];
-  await writeIndex(dir, index);
+    delete index.items[input.id];
+    await writeIndex(dir, index);
 
-  const extension = EXTENSION_BY_MIME[meta.mime];
-  await fs.rm(path.join(dir, `${input.id}${extension}`), { force: true });
-  console.log(`[advance-paseo] deleted wallpaper "${meta.name}"`);
-  return { deleted: true };
+    const extension = EXTENSION_BY_MIME[meta.mime];
+    await fs.rm(path.join(dir, `${input.id}${extension}`), { force: true });
+    console.log(`[advance-paseo] deleted wallpaper "${meta.name}"`);
+    return { deleted: true };
+  });
 }
 
 /** Register every wallpaper RPC handler; returns the feature cleanup. */

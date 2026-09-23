@@ -135,6 +135,8 @@ export interface RateMeterState {
   readonly running: boolean;
   readonly metric: RateMetric | null;
   readonly samples: readonly RateSample[];
+  readonly hasMeasurement: boolean;
+  readonly lastProgressAt: number | null;
   /** Turn-frozen measurement shown after completion until the next turn. */
   readonly frozen: { readonly ratePerSecond: number; readonly outputTokens: number } | null;
   readonly usage: UsageFigures;
@@ -145,6 +147,8 @@ export function createRateMeterState(): RateMeterState {
     running: false,
     metric: null,
     samples: [],
+    hasMeasurement: false,
+    lastProgressAt: null,
     frozen: null,
     usage: { outputTokens: null, contextRatio: null },
   };
@@ -194,7 +198,7 @@ function sampleCounterOf(usage: UsageCounterSource | undefined): {
 }
 
 export function onTurnStarted(state: RateMeterState): RateMeterState {
-  return { running: true, metric: null, samples: [], frozen: null, usage: state.usage };
+  return { ...createRateMeterState(), running: true, usage: { ...state.usage, outputTokens: null } };
 }
 
 export function onUsageUpdated(
@@ -224,11 +228,19 @@ export function onUsageUpdated(
     kept = [];
   }
 
+  const samples = [...kept, { atMs, tokens: counter.tokens }];
+  const rebased = switchesMetric || resets || jumps ||
+    (kept.length === 0 && previous !== undefined && counter.tokens !== previous.tokens);
+  const hasMeasurement = (!rebased && state.hasMeasurement) ||
+    (samples.length >= 2 && atMs - samples[0].atMs >= RATE_MIN_SPAN_MS);
   return {
     running: true,
     metric: counter.metric,
-    samples: [...kept, { atMs, tokens: counter.tokens }],
-    frozen: state.frozen,
+    samples,
+    hasMeasurement,
+    lastProgressAt: rebased || previous === undefined || counter.tokens > previous.tokens
+      ? atMs : state.lastProgressAt,
+    frozen: null,
     usage: figures,
   };
 }
@@ -251,13 +263,19 @@ export function onTurnSettled(
       }
     }
   }
-  const rate = deriveRate({ ...state, samples }, atMs);
+  // A final payload using a different counter cannot add a rate sample.
+  // Freeze the latest measurement, but never revive a fully expired window.
+  const last = samples[samples.length - 1];
+  const finalMetric = sampleCounterOf(usage)?.metric;
+  const measureAt = finalMetric !== undefined && finalMetric !== state.metric && last &&
+    atMs - last.atMs < RATE_WINDOW_MS ? last.atMs : atMs;
+  const rate = deriveRate({ ...state, samples, running: true }, measureAt);
   const output = figures.outputTokens;
   const frozen =
     rate !== null
       ? { ratePerSecond: rate, outputTokens: output ?? 0 }
       : state.frozen;
-  return { running: false, metric: state.metric, samples, frozen, usage: figures };
+  return { ...state, running: false, samples, frozen, usage: figures };
 }
 
 function lastOutputOf(state: RateMeterState): number | null {
@@ -266,12 +284,14 @@ function lastOutputOf(state: RateMeterState): number | null {
 
 /** Average tokens/sec over the sliding window; null while unknown. */
 export function deriveRate(state: RateMeterState, nowMs: number): number | null {
-  if (state.samples.length < 2) {
-    return state.frozen !== null ? state.frozen.ratePerSecond : null;
-  }
-  const first = state.samples[0];
-  const last = state.samples[state.samples.length - 1];
-  const spanMs = (state.running ? Math.min(nowMs, last.atMs) : last.atMs) - first.atMs;
+  if (!state.running) return state.frozen?.ratePerSecond ?? null;
+  if (state.hasMeasurement && state.lastProgressAt !== null &&
+      nowMs - state.lastProgressAt >= RATE_WINDOW_MS) return 0;
+  const samples = state.samples.filter(sample => nowMs - sample.atMs <= RATE_WINDOW_MS);
+  if (samples.length < 2) return state.hasMeasurement ? 0 : null;
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  const spanMs = nowMs - first.atMs;
   const delta = last.tokens - first.tokens;
   if (spanMs < RATE_MIN_SPAN_MS || delta < 0) {
     return state.frozen !== null ? state.frozen.ratePerSecond : null;

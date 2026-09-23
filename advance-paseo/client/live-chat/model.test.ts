@@ -101,6 +101,30 @@ describe("foldTimelineItem", () => {
   });
 });
 
+describe("idle rate readings", () => {
+  it("decays without new events and reaches zero after twelve seconds", () => {
+    let state = onTurnStarted(createRateMeterState());
+    state = onUsageUpdated(state, 0, { outputTokens: 0 });
+    state = onUsageUpdated(state, 1000, { outputTokens: 100 });
+    expect(rateMeterViewOf(state, 1000)?.ratePerSecond).toBe(100);
+    expect(rateMeterViewOf(state, 5000)?.ratePerSecond).toBe(20);
+    expect(rateMeterViewOf(state, 13000)?.ratePerSecond).toBe(0);
+    expect(rateMeterViewOf(state, 21000)?.ratePerSecond).toBe(0);
+    state = onUsageUpdated(state, 22000, { outputTokens: 150 });
+    expect(rateMeterViewOf(state, 22000)?.ratePerSecond).toBeNull();
+  });
+  it("does not confuse repeated counters with fresh output", () => {
+    let state = onTurnStarted(createRateMeterState());
+    state = onUsageUpdated(state, 0, { outputTokens: 0 });
+    state = onUsageUpdated(state, 1000, { outputTokens: 100 });
+    state = onUsageUpdated(state, 12000, { outputTokens: 100 });
+    expect(rateMeterViewOf(state, 13000)?.ratePerSecond).toBe(0);
+    state = onTurnSettled(state, 14000);
+    expect(rateMeterViewOf(state, 100000)?.ratePerSecond).toBe(0);
+    expect(rateMeterViewOf(onTurnStarted(state), 100000)).toBeNull();
+  });
+});
+
 describe("rate meter", () => {
   const outputUsage = (outputTokens: number, over?: Partial<AgentUsage>): AgentUsage => ({
     outputTokens,

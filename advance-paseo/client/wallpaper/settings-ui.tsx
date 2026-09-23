@@ -3,7 +3,7 @@
 // immediately for live feedback. All visible text comes from the i18n
 // dictionary.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
 import {
   useRpc,
@@ -27,7 +27,8 @@ import { SETTINGS_CARD_TEST_ID } from "./wallpaper-css";
 import {
   applyWallpaperState,
   engineStateOf,
-  setWallpaperImages,
+  beginWallpaperImages,
+  type WallpaperImageRequest,
   type WallpaperImages,
 } from "./engine";
 import { resolveWallpaperImagesWith, type WallpaperReader } from "./loader";
@@ -55,7 +56,7 @@ function formatBytes(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KiB`;
 }
 
-export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) {
+export function WallpaperSettingsSection({ theme, layout, host }: PluginSurfaceProps) {
   const settings = useSettings(wallpaperSettings);
   const t = useText();
   const listRpc = useRpc(wallpaperListRpc);
@@ -68,6 +69,19 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
   const [previews, setPreviews] = useState<WallpaperImages>({ light: null, dark: null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const actionLock = useRef(false);
+  const lifetime = useRef(0);
+  const imageRequest = useRef<WallpaperImageRequest | null>(null);
+  const [imageReload, setImageReload] = useState(0);
+  const latestSettings = useRef(settings);
+  latestSettings.current = settings;
+  useEffect(() => {
+    lifetime.current += 1;
+    return () => {
+      lifetime.current += 1;
+      imageRequest.current?.cancel();
+    };
+  }, [host.id]);
   const [pathDrafts, setPathDrafts] = useState<Record<WallpaperSlot, string>>({
     light: "",
     dark: "",
@@ -144,13 +158,17 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
   // settings screen restores the wallpaper.
   useEffect(() => {
     if (settings.status !== "ready") return;
+    let cancelled = false;
+    const request = beginWallpaperImages(settings.values);
+    imageRequest.current = request;
     void resolveWallpaperImagesWith(reader, settings.values)
       .then((resolution) => {
+        if (cancelled || (request && !request.apply(resolution.images))) return;
         setPreviews(resolution.images);
-        setWallpaperImages(resolution.images);
       })
-      .catch(() => setPreviews({ light: null, dark: null }));
-  }, [slotsKey, settings.status, reader]); // eslint-disable-line react-hooks/exhaustive-deps
+      .catch(() => { if (!cancelled) setPreviews({ light: null, dark: null }); });
+    return () => { cancelled = true; request?.cancel(); };
+  }, [slotsKey, settings.status, reader, host.id, imageReload]);
 
   if (settings.status === "loading") {
     return (
@@ -191,21 +209,46 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
       : formatTemplate(t.wallpaper.importedLabel, { id: source.id.slice(0, 8) });
   };
 
-  /** Apply + persist a full settings object, resolving slot images eagerly. */
-  const commit = async (next: WallpaperSettings): Promise<void> => {
+  const startAction = (): boolean => {
+    if (actionLock.current || settings.saving) return false;
+    actionLock.current = true;
     setBusy(true);
     setError(null);
+    return true;
+  };
+  const finishAction = () => { actionLock.current = false; setBusy(false); };
+
+  /** Save outcome is a prerequisite for destructive follow-up actions. */
+  const commit = async (next: WallpaperSettings, nested = false): Promise<boolean> => {
+    if (!nested && !startAction()) return false;
+    const version = lifetime.current;
+    const slotsChanged = JSON.stringify([next.light, next.dark]) !== slotsKey;
     try {
+      if (slotsChanged) imageRequest.current?.cancel();
       applyWallpaperState(engineStateOf(next));
-      const resolution = await resolveWallpaperImagesWith(reader, next);
-      setWallpaperImages(resolution.images);
-      setPreviews(resolution.images);
       const saved = await settings.save(next, settings.revision);
-      if (!saved) void settings.reload();
+      if (version !== lifetime.current) return false;
+      if (!saved) {
+        setError(t.common.saveFailed);
+        await settings.reload();
+        if (version !== lifetime.current) return false;
+        const current = latestSettings.current;
+        if (current.status === "ready") applyWallpaperState(engineStateOf(current.values));
+        setImageReload(value => value + 1);
+        return false;
+      }
+      if (slotsChanged) setImageReload(value => value + 1);
+      return true;
     } catch (commitError) {
-      setError(commitError instanceof Error ? commitError.message : String(commitError));
+      if (version === lifetime.current) {
+        setError(commitError instanceof Error ? commitError.message : String(commitError));
+        const current = latestSettings.current;
+        if (current.status === "ready") applyWallpaperState(engineStateOf(current.values));
+        setImageReload(value => value + 1);
+      }
+      return false;
     } finally {
-      setBusy(false);
+      if (!nested) finishAction();
     }
   };
 
@@ -217,47 +260,53 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
   };
 
   const importIntoSlot = async (slot: WallpaperSlot): Promise<void> => {
-    const picked = await pickWallpaperImage();
-    if (picked === null) {
-      if (!isWebPlatform()) setError(t.wallpaper.importNeedsWeb);
-      return;
-    }
-    setBusy(true);
-    setError(null);
+    if (!startAction()) return;
+    const version = lifetime.current;
     try {
+      const picked = await pickWallpaperImage();
+      if (version !== lifetime.current) return;
+      if (picked === null) {
+        if (!isWebPlatform()) setError(t.wallpaper.importNeedsWeb);
+        return;
+      }
       const upload = await uploadRpc({ name: picked.name, dataUrl: picked.dataUrl });
+      if (version !== lifetime.current) return;
       await refreshLibrary();
-      await commit({ ...values, [slot]: { kind: "managed", id: upload.wallpaper.id } });
+      if (version !== lifetime.current) return;
+      await commit({ ...values, [slot]: { kind: "managed", id: upload.wallpaper.id } }, true);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : String(uploadError));
     } finally {
-      setBusy(false);
+      finishAction();
     }
   };
 
   const importToLibrary = async (): Promise<void> => {
-    const picked = await pickWallpaperImage();
-    if (picked === null) {
-      if (!isWebPlatform()) setError(t.wallpaper.importNeedsWeb);
-      return;
-    }
-    setBusy(true);
-    setError(null);
+    if (!startAction()) return;
+    const version = lifetime.current;
     try {
+      const picked = await pickWallpaperImage();
+      if (version !== lifetime.current) return;
+      if (picked === null) {
+        if (!isWebPlatform()) setError(t.wallpaper.importNeedsWeb);
+        return;
+      }
       await uploadRpc({ name: picked.name, dataUrl: picked.dataUrl });
+      if (version !== lifetime.current) return;
       await refreshLibrary();
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : String(uploadError));
     } finally {
-      setBusy(false);
+      finishAction();
     }
   };
 
   const applyPath = async (slot: WallpaperSlot): Promise<void> => {
     const path = pathDrafts[slot].trim();
     if (path.length === 0) return;
-    await commit({ ...values, [slot]: { kind: "path", path } });
-    setPathDrafts((drafts) => ({ ...drafts, [slot]: "" }));
+    if (await commit({ ...values, [slot]: { kind: "path", path } })) {
+      setPathDrafts((drafts) => ({ ...drafts, [slot]: "" }));
+    }
   };
 
   const clearSlot = async (slot: WallpaperSlot): Promise<void> => {
@@ -269,22 +318,23 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
   };
 
   const removeItem = async (item: WallpaperMeta): Promise<void> => {
-    setBusy(true);
-    setError(null);
+    if (!startAction()) return;
+    const version = lifetime.current;
     try {
       // Clear any slot that referenced the item so reads never fail.
       const next: WallpaperSettings = { ...values };
       if (next.light?.kind === "managed" && next.light.id === item.id) next.light = null;
       if (next.dark?.kind === "managed" && next.dark.id === item.id) next.dark = null;
       if (next.light !== values.light || next.dark !== values.dark) {
-        await commit(next);
+        if (!await commit(next, true)) return;
       }
+      if (version !== lifetime.current) return;
       await deleteRpc({ id: item.id });
       await refreshLibrary();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
     } finally {
-      setBusy(false);
+      finishAction();
     }
   };
 
@@ -450,6 +500,7 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
                 accessibilityRole="button"
                 accessibilityLabel={formatTemplate(t.wallpaper.useForLightAlt, { name: item.name })}
                 onPress={() => void useFor("light", item)}
+                disabled={busy || settings.saving}
               >
                 <Text style={linkStyle}>{t.wallpaper.useLight}</Text>
               </Pressable>
@@ -457,6 +508,7 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
                 accessibilityRole="button"
                 accessibilityLabel={formatTemplate(t.wallpaper.useForDarkAlt, { name: item.name })}
                 onPress={() => void useFor("dark", item)}
+                disabled={busy || settings.saving}
               >
                 <Text style={linkStyle}>{t.wallpaper.useDark}</Text>
               </Pressable>
@@ -464,6 +516,7 @@ export function WallpaperSettingsSection({ theme, layout }: PluginSurfaceProps) 
                 accessibilityRole="button"
                 accessibilityLabel={formatTemplate(t.wallpaper.deleteAlt, { name: item.name })}
                 onPress={() => void removeItem(item)}
+                disabled={busy || settings.saving}
               >
                 <Text style={dangerStyle}>{t.wallpaper.delete}</Text>
               </Pressable>

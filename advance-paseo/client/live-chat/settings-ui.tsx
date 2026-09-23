@@ -3,7 +3,7 @@
 // through the host-scoped settings document and reach the engine immediately
 // for live feedback. All visible text comes from the i18n dictionary.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Text } from "react-native";
 import {
   useSettings,
@@ -33,6 +33,10 @@ import { applyLiveChatState, engineStateOf } from "./engine";
 export function LiveChatSettingsSection({ theme }: PluginSurfaceProps) {
   const settings = useSettings(liveChatSettings);
   const t = useText();
+  const valuesKey = settings.status === "ready" ? JSON.stringify(settings.values) : "";
+  useEffect(() => {
+    if (settings.status === "ready") applyLiveChatState(engineStateOf(settings.values));
+  }, [settings.status, valuesKey]);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

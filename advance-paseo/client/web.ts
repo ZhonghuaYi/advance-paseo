@@ -45,6 +45,7 @@ export function pickWallpaperImage(): Promise<PickedImage | null> {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/webp,image/jpeg,image/png,image/gif";
+    input.addEventListener("cancel", () => resolve(null));
     input.onchange = (event) => {
       const target = event.target;
       const files = target === null ? null : target.files;

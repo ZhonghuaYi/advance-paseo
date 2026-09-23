@@ -68,9 +68,9 @@ function shellTransparency(shellClasses: readonly string[]): string {
   if (selectors.length === 0) {
     return "/* No shell classes discovered yet; shells keep their theme paint. */";
   }
-  const selectorList = selectors.map((token) => `.${token}`).join(",\n  ");
+  const selectorList = selectors.map((token) => `html[${ROOT_ATTRIBUTE}] .${token}`).join(",\n  ");
   return [
-    `html[${ROOT_ATTRIBUTE}] ${selectorList} {`,
+    `${selectorList} {`,
     "  background-color: transparent !important;",
     "}",
   ].join("\n");
@@ -106,7 +106,8 @@ export function buildWallpaperCss(
   const tabsTintDark = rgbaString(WALLPAPER_TINTS.darkTabs, scaledAlpha(0.46, scrim));
 
   const imageLayer = (color: string) => `linear-gradient(${color}, ${color})`;
-  const sidebarSelector = `[${WORKSPACE_SIDEBAR_ATTRIBUTE}],\n  [${RIGHT_SIDEBAR_ATTRIBUTE}],\n  [${SETTINGS_SIDEBAR_ATTRIBUTE}]`;
+  const sidebarSelector = [WORKSPACE_SIDEBAR_ATTRIBUTE, RIGHT_SIDEBAR_ATTRIBUTE, SETTINGS_SIDEBAR_ATTRIBUTE]
+    .map((attribute) => `html[${ROOT_ATTRIBUTE}] [${attribute}]`).join(",\n  ");
 
   return `
 /* Base coat: the wallpaper and its scrim paint once on the canvas (<html>).
@@ -170,7 +171,7 @@ html[${ROOT_ATTRIBUTE}] [${OPAQUE_COVER_ATTRIBUTE}] {
 @media (min-width: 721px) {
   /* Desktop chrome glass: the marked sidebars keep their identity with a
    * translucent tint and backdrop blur that now samples the base coat. */
-  html[${ROOT_ATTRIBUTE}] ${sidebarSelector} {
+  ${sidebarSelector} {
 ${sidebarGlass}
     background-clip: padding-box !important;
     isolation: isolate;

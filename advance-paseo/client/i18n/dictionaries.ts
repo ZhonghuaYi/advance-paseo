@@ -10,6 +10,7 @@ export const en = {
   },
   common: {
     couldNotRead: "Could not read settings",
+    saveFailed: "Could not save settings. Reloaded the saved values; please try again.",
     retry: "Retry",
     storedInvalid: "Stored values are invalid",
     restoreDefaults: "Restore defaults",
@@ -153,6 +154,7 @@ export const zh: Dictionary = {
   },
   common: {
     couldNotRead: "无法读取设置",
+    saveFailed: "设置保存失败，已重新读取已保存的配置，请重试。",
     retry: "重试",
     storedInvalid: "存储的设置无效",
     restoreDefaults: "恢复默认值",

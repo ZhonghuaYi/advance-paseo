@@ -1,3 +1,4 @@
+import { isTextOnlyBatch } from "../dom-nodes";
 // Web/Electron wallpaper controller for the Advance Paseo plugin.
 //
 // Architecture (see wallpaper-css.ts for the visual half): the wallpaper
@@ -112,6 +113,19 @@ interface WallpaperController {
   shellClasses: string[];
   state: WallpaperEngineState;
   images: WallpaperImages;
+  /**
+   * Contribute lifetimes currently sharing this controller, counted across
+   * EVERY bundle instance (one per host connection). The controller dies only
+   * when the last one leaves.
+   */
+  refCount: number;
+  /**
+   * INSTANCE_KEY of the bundle instance that currently owns the window's
+   * wallpaper state; null while unowned (see the ownership protocol above).
+   */
+  ownerKey: string | null;
+  interactiveOwner: boolean;
+  imageVersion: number;
   /** Cached detection result; recomputed only while `modeDirty` is set. */
   mode: WallpaperMode | null;
   modeDirty: boolean;
@@ -127,7 +141,76 @@ interface WallpaperController {
   reschedule: (delay: number) => void;
 }
 
-let controller: WallpaperController | null = null;
+/**
+ * Registry key on the style element holding `{ controller }`. The engine is
+ * per-document, so the LIVE controller is resolved through the DOM — never
+ * through a module variable — which is what makes sharing across bundle
+ * instances work.
+ */
+const CONTROLLER_PROPERTY = "__paseoAdvanceController";
+
+/**
+ * Identifies THIS bundle instance (one is evaluated per host connection) as
+ * a writer. Used for the ownership protocol below.
+ */
+const INSTANCE_KEY = `advance-${Math.random().toString(36).slice(2, 10)}`;
+
+/** Who is trying to write engine state. */
+export type WallpaperWriteOrigin = "settings" | "bootstrap";
+
+/** Outcome of a state/image write. */
+export type WallpaperWriteResult = "applied" | "deferred" | "rejected";
+
+/**
+ * Single-writer ownership over the shared engine.
+ *
+ * The wallpaper paints one DOM layer for the whole window, but every
+ * connected host's bundle instance used to push its own persisted settings
+ * at connect time — the window showed whichever host initialized last. The
+ * user-facing rule is now: the window follows the CLIENT's host. Two write
+ * paths implement it:
+ *
+ * - `"bootstrap"` (background init at host connect) may only write while
+ *   the engine has NO owner yet. The first host to finish initializing —
+ *   in practice the client's own daemon, which the app always connects
+ *   first — owns the window; every later-connected host's background apply
+ *   is rejected and never repaints the window.
+ * - `"settings"` (a mounted settings screen — its component runs inside
+ *   the host the user selected in the host picker) may always write and
+ *   takes over ownership, so live preview works no matter which host's
+ *   settings are open. Opening another host's settings deliberately
+ *   re-targets the window; the previous owner is not restored afterwards.
+ *
+ * When the owning instance's connection goes away it releases ownership;
+ * the painting stays as-is (no flash) and the next host to bootstrap —
+ * e.g. the client's daemon reconnecting — may claim the window again.
+ */
+function canWrite(current: WallpaperController, origin: WallpaperWriteOrigin): boolean {
+  if (origin === "bootstrap" && current.ownerKey === INSTANCE_KEY && current.interactiveOwner) return false;
+  if (current.ownerKey === null || current.ownerKey === INSTANCE_KEY) return true;
+  return origin === "settings";
+}
+
+/**
+ * Resolve the one live controller for this document, or null when the engine
+ * is not installed. Every public entry point goes through here so a settings
+ * screen inside ANY bundle instance drives the SAME controller.
+ *
+ * Scans every element sharing STYLE_ID rather than getElementById: a legacy
+ * orphan (pre-sharing versions attached cleanup elsewhere and could leave a
+ * same-id element behind) must not shadow the live registry entry.
+ */
+function liveController(): WallpaperController | null {
+  for (const style of document.querySelectorAll(`#${STYLE_ID}`)) {
+    const handle = Reflect.get(style, CONTROLLER_PROPERTY) as
+      | { readonly controller?: unknown }
+      | null;
+    if (handle === null || typeof handle !== "object") continue;
+    const found = handle.controller;
+    if (found !== null && typeof found === "object") return found as WallpaperController;
+  }
+  return null;
+}
 
 function styleOptionsOf(state: WallpaperEngineState) {
   return { scrim: state.scrim, accent: state.accent, blur: state.blur };
@@ -136,27 +219,47 @@ function styleOptionsOf(state: WallpaperEngineState) {
 /**
  * Apply new engine state to the running controller: rebuild the stylesheet
  * (scrim, accent, blur), switch the detection strategy, and enable or
- * disable painting. No-op on native hosts and before installation.
+ * disable painting. Writes are ownership-gated (see WallpaperWriteOrigin);
+ * interactive writes from a mounted settings screen claim the engine, while
+ * background bootstrap writes only land on an unowned engine. No-op on
+ * native hosts and before installation.
  */
-export function applyWallpaperState(state: WallpaperEngineState): void {
-  if (typeof document === "undefined") return;
-  const current = controller;
-  if (!current || current.stopped) return;
+export function applyWallpaperState(
+  state: WallpaperEngineState,
+  origin: WallpaperWriteOrigin = "settings",
+): WallpaperWriteResult {
+  if (typeof document === "undefined") return "deferred";
+  const current = liveController();
+  if (!current || current.stopped) return "deferred";
+  if (!canWrite(current, origin)) return "rejected";
+  if (current.ownerKey !== INSTANCE_KEY) {
+    current.imageVersion += 1;
+    current.interactiveOwner = false;
+  }
+  current.ownerKey = INSTANCE_KEY;
+  if (origin === "settings") current.interactiveOwner = true;
 
   if (current.state.mode !== state.mode) current.modeDirty = true;
   current.state = state;
   current.style.textContent = buildWallpaperCss(styleOptionsOf(state), current.shellClasses);
   current.reschedule(0);
+  return "applied";
 }
 
 /**
  * Swap the active wallpaper data URLs (light/dark slots). Blob URLs of
  * replaced images are revoked; unchanged slots keep their cached URL.
+ * Ownership-gated exactly like applyWallpaperState.
  */
-export function setWallpaperImages(images: WallpaperImages): void {
-  if (typeof document === "undefined") return;
-  const current = controller;
-  if (!current || current.stopped) return;
+function setWallpaperImages(
+  images: WallpaperImages,
+  origin: WallpaperWriteOrigin = "settings",
+): WallpaperWriteResult {
+  if (typeof document === "undefined") return "deferred";
+  const current = liveController();
+  if (!current || current.stopped) return "deferred";
+  if (!canWrite(current, origin)) return "rejected";
+  current.ownerKey = INSTANCE_KEY;
 
   for (const mode of ["light", "dark"] as const) {
     if (current.images[mode] === images[mode]) continue;
@@ -176,20 +279,66 @@ export function setWallpaperImages(images: WallpaperImages): void {
     warm.src = url;
   }
   current.reschedule(0);
+  return "applied";
+}
+
+export interface WallpaperImageRequest {
+  isCurrent(): boolean;
+  apply(images: WallpaperImages): boolean;
+  cancel(): void;
+}
+
+/** A completion can update only the controller, owner and slots it started for. */
+export function beginWallpaperImages(
+  settings: WallpaperSettings,
+  origin: WallpaperWriteOrigin = "settings",
+): WallpaperImageRequest | null {
+  if (applyWallpaperState(engineStateOf(settings), origin) !== "applied") return null;
+  const current = liveController()!;
+  const version = ++current.imageVersion;
+  let cancelled = false;
+  const isCurrent = () => !cancelled && !current.stopped && liveController() === current &&
+    current.ownerKey === INSTANCE_KEY && current.imageVersion === version;
+  return {
+    isCurrent,
+    apply(images) {
+      return isCurrent() && setWallpaperImages(images, origin) === "applied";
+    },
+    cancel() { cancelled = true; },
+  };
 }
 
 /**
- * Tear the engine down when this is the last installation; otherwise just
- * drop this installation's reference. Safe to call when none exists.
+ * Release this contribute lifetime's claim on the shared controller. The
+ * engine is torn down only when the LAST sharer (across every bundle
+ * instance) leaves. Safe to call when none exists.
  */
 export function removeWallpaperEngine(): void {
   if (typeof document === "undefined") return;
-  if (installRefCount > 0) {
-    installRefCount -= 1;
+  if (pendingInstallTimer !== null) {
+    // Our deferred install never ran; we hold no claim to release.
+    window.clearTimeout(pendingInstallTimer);
+    pendingInstallTimer = null;
     return;
   }
-  const style = document.getElementById(STYLE_ID);
-  const cleanup: unknown = style ? Reflect.get(style, CLEANUP_PROPERTY) : null;
+  if (!joinedSharedEngine) return;
+  joinedSharedEngine = false;
+  const current = liveController();
+  if (current === null) {
+    purgeOrphanStyles();
+    return;
+  }
+  // If this instance owned the window's wallpaper, release it: painting
+  // stays as-is, and the next host to bootstrap (typically this client's
+  // daemon reconnecting) may claim the window again.
+  if (current.ownerKey === INSTANCE_KEY) {
+    current.ownerKey = null;
+    current.imageVersion += 1;
+    current.interactiveOwner = false;
+  }
+  current.refCount -= 1;
+  if (current.refCount > 0) return;
+  const cleanup: unknown = Reflect.get(current.style, CLEANUP_PROPERTY);
   if (typeof cleanup === "function") cleanup();
 }
 
@@ -198,25 +347,44 @@ export function removeWallpaperEngine(): void {
  * no longer exists, so their style element can survive a reload as an
  * orphan sharing our STYLE_ID (it keeps stale rules and shadows
  * getElementById). Drop any element that still carries our id before
- * creating the fresh one.
+ * creating the fresh one; a legacy orphan's cleanup runs first so its
+ * observers and timers do not leak.
  */
 function purgeOrphanStyles(): void {
   for (const orphan of document.querySelectorAll(`#${STYLE_ID}`)) {
-    if (orphan instanceof HTMLElement) orphan.remove();
+    if (!(orphan instanceof HTMLElement)) continue;
+    const cleanup: unknown = Reflect.get(orphan, CLEANUP_PROPERTY);
+    if (typeof cleanup === "function") cleanup();
+    orphan.remove();
   }
 }
 
 /**
  * The host installs the plugin once per host connection, so the client
- * bundle (and this engine) can be installed multiple times in the SAME
- * window. Parallel controllers over the shared <html> state used to race:
- * one installation's teardown stripped the attributes another instance had
- * just written, and the survivor's appliedKey cache made it never rewrite —
- * the "wallpaper gone after switching themes" state. The engine is
- * inherently per-document, so installations now SHARE one controller via a
- * reference count; only the last one out tears it down.
+ * bundle (and this engine module) is evaluated once per connected host —
+ * several module instances in the SAME window. Module-level singletons do
+ * not work here: an earlier design kept `controller` in a module variable,
+ * and each new instance's install DESTROYED the previous instance's
+ * controller through the shared DOM (same STYLE_ID). Whichever instance no
+ * longer owned the controller then silently no-opped every settings edit —
+ * scrim and blur sliders stopped working whenever the visible settings
+ * screen belonged to an earlier-connected host.
+ *
+ * The controller is therefore registered ON THE DOM (the style element
+ * carries it under CONTROLLER_PROPERTY) and reference-counted across
+ * instances: every install of an already-live engine just bumps the count,
+ * every teardown just drops one claim, and only the last one out tears the
+ * engine down. State writes from any instance drive the same controller.
+ *
+ * Refcount balance is tracked per module instance (`joinedSharedEngine` /
+ * `pendingInstallTimer`): a lifetime that never managed to join — its
+ * deferred install was cancelled or found nothing to join — releases
+ * nothing, so it can never tear down an engine another instance still owns.
  */
-let installRefCount = 0;
+/** This module instance's deferred-install timer, while one is pending. */
+let pendingInstallTimer: number | null = null;
+/** Whether this module instance currently holds a claim on the engine. */
+let joinedSharedEngine = false;
 
 /**
  * The whole architecture rides on the host exposing its surface colors as
@@ -245,8 +413,12 @@ export function installWallpaperEngine(
 ): PluginThemeContribution {
   if (typeof document === "undefined") return theme;
 
-  if (controller !== null) {
-    installRefCount += 1;
+  // Another instance (this or an earlier host connection) already owns the
+  // document's engine: join it instead of installing a second one.
+  const existing = liveController();
+  if (existing !== null && !existing.stopped) {
+    existing.refCount += 1;
+    joinedSharedEngine = true;
     return theme;
   }
 
@@ -254,23 +426,34 @@ export function installWallpaperEngine(
   // case the plugin client starts first.
   if (hostExposesSurfaceVariables()) {
     installController();
+    joinedSharedEngine = true;
     return theme;
   }
-  window.setTimeout(() => {
-    if (controller !== null) return;
+  const timer = window.setTimeout(() => {
+    // Superseded or cancelled while pending: nothing to do.
+    if (pendingInstallTimer !== timer) return;
+    pendingInstallTimer = null;
+    const live = liveController();
+    if (live !== null && !live.stopped) {
+      // Someone else installed while we waited; join their engine.
+      live.refCount += 1;
+      joinedSharedEngine = true;
+      return;
+    }
     if (hostExposesSurfaceVariables()) {
       installController();
+      joinedSharedEngine = true;
     } else {
       console.error(
         "[advance-paseo] wallpaper stays dormant: the host does not expose --colors-* CSS variables",
       );
     }
   }, 1500);
+  pendingInstallTimer = timer;
   return theme;
 }
 
 function installController(): void {
-  removeWallpaperEngine();
   purgeOrphanStyles();
 
   const style = document.createElement("style");
@@ -284,6 +467,10 @@ function installController(): void {
     shellClasses: [],
     state: DEFAULT_ENGINE_STATE,
     images: { light: null, dark: null },
+    refCount: 1,
+    ownerKey: null,
+    interactiveOwner: false,
+    imageVersion: 0,
     mode: null,
     modeDirty: true,
     appliedKey: null,
@@ -295,8 +482,7 @@ function installController(): void {
     rootObserver: null as unknown as MutationObserver,
     reschedule: () => {},
   };
-  controller = instance;
-  installRefCount = 1;
+  Reflect.set(style, CONTROLLER_PROPERTY, { controller: instance });
 
   const refreshShellClasses = () => {
     const discovered = discoverSurface0ShellClasses();
@@ -457,8 +643,9 @@ function installController(): void {
     clearDecorations(instance.decorated);
     for (const url of instance.blobUrls.values()) URL.revokeObjectURL(url);
     instance.blobUrls.clear();
+    // Removing the style element also drops the DOM registry entry.
+    instance.refCount = 0;
     style.remove();
-    controller = null;
   };
   Reflect.set(style, CLEANUP_PROPERTY, cleanup);
 }
@@ -493,19 +680,7 @@ function clearTimers(target: WallpaperController): void {
   }
 }
 
-function isTextOnlyBatch(records: readonly MutationRecord[]): boolean {
-  if (records.length === 0) return false;
-  return records.every(
-    (record) =>
-      record.type === "childList" &&
-      containsNoElements(record.addedNodes) &&
-      containsNoElements(record.removedNodes),
-  );
-}
 
-function containsNoElements(nodes: readonly unknown[]): boolean {
-  return nodes.every((node) => !(node instanceof HTMLElement));
-}
 
 function clearDecorations(elements: Set<HTMLElement>): void {
   for (const element of elements) {

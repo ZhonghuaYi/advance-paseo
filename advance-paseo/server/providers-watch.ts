@@ -1,287 +1,194 @@
-// Providers auto-refresh watcher. Paseo's daemon caches the provider catalog
-// (models, modes) and only re-discovers it on an explicit
-// `paseo.providers.refresh()`. This module watches provider CLI config files
-// — Claude Code's settings by default — and triggers that refresh whenever a
-// watched file's content actually changes.
-//
-// Watch strategy: each watched file's PARENT directory gets one fs.watch
-// handle, filtered by file name, so temp-file-plus-rename atomic saves fire
-// the same as in-place writes. Content is sha256-compared against the last
-// seen hash so no-op rewrites never trigger a refresh. A trailing debounce
-// collapses editor save bursts.
-
+// Directory watches survive atomic file replacement. Async work belongs to a
+// lifecycle, so superseded activation cannot resurrect old watches.
 import { promises as fs, watch, type FSWatcher } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import type { PaseoApi } from "@getpaseo/client";
-import {
-  providersArmRpc,
-  providersRefreshNowRpc,
-  providersStatusRpc,
-  type ProvidersSettings,
-  type WatchTarget,
-} from "../shared/providers";
+import { providersArmRpc, providersRefreshNowRpc, providersStatusRpc,
+  type ProvidersSettings, type WatchTarget } from "../shared/providers";
 import { expandHomePath } from "./paths";
 
-interface WatchTargetState {
+interface Target {
   rawPath: string;
   resolved: string;
   dir: string;
   base: string;
   exists: boolean;
-  /** sha256 hex of the last seen content; null while the file is missing. */
   lastHash: string | null;
 }
-
-interface WatcherState {
-  armed: boolean;
-  enabled: boolean;
-  debounceMs: number;
-  targets: Map<string, WatchTargetState>;
-  watchers: Map<string, FSWatcher>;
-  pending: Set<WatchTargetState>;
-  timer: ReturnType<typeof setTimeout> | null;
-  paseo: PaseoApi | null;
-  lastChangeAt: string | null;
-  lastRefreshAt: string | null;
-  lastError: string | null;
-}
-
-function initialState(): WatcherState {
+function initialState() {
   return {
-    armed: false,
-    enabled: true,
-    debounceMs: 1500,
-    targets: new Map(),
-    watchers: new Map(),
-    pending: new Set(),
-    timer: null,
-    paseo: null,
-    lastChangeAt: null,
-    lastRefreshAt: null,
-    lastError: null,
+    armed: false, enabled: true, debounceMs: 1500,
+    targets: new Map<string, Target>(), watchers: new Map<string, FSWatcher>(),
+    pending: new Set<Target>(), timer: null as ReturnType<typeof setTimeout> | null,
+    paseo: null as PaseoApi | null,
+    lastChangeAt: null as string | null, lastRefreshAt: null as string | null,
+    lastError: null as string | null,
   };
 }
-
-let state: WatcherState = initialState();
+type State = ReturnType<typeof initialState>;
+let state = initialState();
+let generation = 0;
+let activationQueue: Promise<unknown> = Promise.resolve();
+const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error);
+const isCurrent = (current: State, version: number) => state === current && generation === version;
 
 async function hashFile(resolved: string): Promise<string | null> {
   try {
-    const bytes = await fs.readFile(resolved);
-    return createHash("sha256").update(bytes).digest("hex");
-  } catch {
-    return null;
-  }
-}
-
-function closeWatchers(): void {
-  for (const watcher of state.watchers.values()) watcher.close();
-  state.watchers.clear();
-  if (state.timer !== null) {
-    clearTimeout(state.timer);
-    state.timer = null;
-  }
-  state.pending.clear();
-}
-
-function targetSnapshots(): WatchTarget[] {
-  return [...state.targets.values()].map((target) => ({
-    path: target.rawPath,
-    resolved: target.resolved,
-    exists: target.exists,
-  }));
-}
-
-async function refreshExistsFlags(): Promise<void> {
-  await Promise.all(
-    [...state.targets.values()].map(async (target) => {
-      try {
-        const stat = await fs.stat(target.resolved);
-        target.exists = stat.isFile();
-      } catch {
-        target.exists = false;
-      }
-    }),
-  );
-}
-
-function onDirectoryEvent(dir: string, filename: string | null): void {
-  const candidates = [...state.targets.values()].filter(
-    (target) => target.dir === dir && (filename === null || filename === target.base),
-  );
-  if (candidates.length === 0) return;
-  for (const candidate of candidates) state.pending.add(candidate);
-  if (state.timer !== null) clearTimeout(state.timer);
-  state.timer = setTimeout(() => {
-    state.timer = null;
-    void onDebounceFire();
-  }, state.debounceMs);
-}
-
-async function onDebounceFire(): Promise<void> {
-  const candidates = [...state.pending];
-  state.pending.clear();
-
-  let changed = false;
-  for (const target of candidates) {
-    const hash = await hashFile(target.resolved);
-    if (hash === null) {
-      // The file vanished; remember that so a later re-creation counts as a
-      // change instead of silently becoming the new baseline.
-      target.lastHash = null;
-      target.exists = false;
-      continue;
-    }
-    target.exists = true;
-    // null -> hash means the file appeared; string -> hash means it changed.
-    if (target.lastHash !== hash) {
-      target.lastHash = hash;
-      changed = true;
-    }
-  }
-
-  if (!changed) return;
-  state.lastChangeAt = new Date().toISOString();
-  console.log("[advance-paseo] provider config change detected; refreshing providers");
-  await triggerRefresh();
-}
-
-async function triggerRefresh(): Promise<void> {
-  const paseo = state.paseo;
-  if (!paseo) {
-    state.lastError = "Watcher not armed with a Paseo session";
-    return;
-  }
-  try {
-    await paseo.providers.refresh();
-    state.lastRefreshAt = new Date().toISOString();
-    state.lastError = null;
-    console.log("[advance-paseo] providers refreshed");
+    return createHash("sha256").update(await fs.readFile(resolved)).digest("hex");
   } catch (error) {
-    state.lastError = error instanceof Error ? error.message : String(error);
-    console.error("[advance-paseo] providers refresh failed:", state.lastError);
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    throw error;
   }
 }
-
-/** Re-arm (or disarm) the watcher with the given settings. */
-export async function armWatchers(
-  settings: ProvidersSettings,
-  paseo: PaseoApi,
-): Promise<{ armed: boolean; watchPaths: WatchTarget[] }> {
-  state.paseo = paseo;
-  closeWatchers();
-  state.targets.clear();
-  state.enabled = settings.enabled;
-  state.debounceMs = settings.debounceMs;
-
-  if (!settings.enabled) {
-    state.armed = false;
-    return { armed: false, watchPaths: targetSnapshots() };
+function closeWatchers(current: State): void {
+  for (const watcher of current.watchers.values()) watcher.close();
+  current.watchers.clear();
+  if (current.timer !== null) clearTimeout(current.timer);
+  current.timer = null;
+  current.pending.clear();
+  current.armed = false;
+}
+function snapshots(current: State): WatchTarget[] {
+  return [...current.targets.values()].map(t => ({ path: t.rawPath, resolved: t.resolved, exists: t.exists }));
+}
+async function triggerRefresh(current: State, version: number, paseo = current.paseo) {
+  const at = new Date().toISOString();
+  if (!isCurrent(current, version)) return { ok: false, at, error: "Watcher activation superseded" };
+  let error: string | null = null;
+  try {
+    if (!paseo) throw new Error("Watcher not armed with a Paseo session");
+    await paseo.providers.refresh();
+  } catch (cause) {
+    error = messageOf(cause);
   }
-
-  // Deduplicate by resolved path while preserving configuration order.
-  const seen = new Set<string>();
-  for (const rawPath of settings.watchPaths) {
-    const resolved = path.resolve(expandHomePath(rawPath));
-    if (seen.has(resolved)) continue;
-    seen.add(resolved);
-    state.targets.set(resolved, {
-      rawPath,
-      resolved,
-      dir: path.dirname(resolved),
-      base: path.basename(resolved),
-      exists: false,
-      lastHash: null,
-    });
+  if (isCurrent(current, version)) {
+    current.lastError = error;
+    if (error === null) current.lastRefreshAt = at;
   }
-
-  // Baseline hashes before attaching watchers so arming never triggers a
-  // refresh by itself.
-  await Promise.all(
-    [...state.targets.values()].map(async (target) => {
-      target.lastHash = await hashFile(target.resolved);
-      target.exists = target.lastHash !== null;
-    }),
-  );
-
-  for (const dir of new Set([...state.targets.values()].map((target) => target.dir))) {
+  return { ok: error === null, at, error };
+}
+async function onDebounceFire(current: State, version: number): Promise<void> {
+  const candidates = [...current.pending];
+  current.pending.clear();
+  let changed = false;
+  let readError: string | null = null;
+  for (const target of candidates) {
     try {
-      const watcher = watch(dir, { persistent: false }, (event, filename) => {
-        // fs.watch event names vary by platform and are not trusted here;
-        // any event for a watched file name is enough to schedule a check.
-        onDirectoryEvent(dir, filename);
-      });
-      watcher.on("error", (error) => {
-        state.lastError = error instanceof Error ? error.message : String(error);
-        console.error(`[advance-paseo] watcher error on ${dir}:`, state.lastError);
-      });
-      state.watchers.set(dir, watcher);
+      const hash = await hashFile(target.resolved);
+      if (!isCurrent(current, version)) return;
+      if (target.lastHash !== hash) changed = true;
+      target.lastHash = hash;
+      target.exists = hash !== null;
     } catch (error) {
-      state.lastError = error instanceof Error ? error.message : String(error);
-      console.error(`[advance-paseo] cannot watch ${dir}:`, state.lastError);
+      if (!isCurrent(current, version)) return;
+      readError = messageOf(error);
+      // Preserve the last successful hash: unreadable does not mean deleted.
     }
   }
-
-  // Armed only when at least one directory is actually being watched;
-  // otherwise the status row explains through exists flags and lastError.
-  state.armed = state.targets.size > 0 && state.watchers.size > 0;
-  console.log(
-    `[advance-paseo] provider watcher ${state.armed ? "armed" : "disarmed"}: ` +
-      [...state.targets.values()].map((target) => target.resolved).join(", "),
-  );
-  return { armed: state.armed, watchPaths: targetSnapshots() };
+  if (!isCurrent(current, version)) return;
+  if (changed) {
+    current.lastChangeAt = new Date().toISOString();
+    await triggerRefresh(current, version);
+  }
+  if (readError !== null && isCurrent(current, version)) current.lastError = readError;
 }
-
-/** Manual refresh used by the settings screen button. */
-export async function refreshNow(paseo: PaseoApi): Promise<{
-  ok: boolean;
-  at: string;
-  error: string | null;
+function onDirectoryEvent(current: State, version: number, dir: string, filename: string | null) {
+  if (!isCurrent(current, version)) return;
+  const candidates = [...current.targets.values()].filter(t =>
+    t.dir === dir && (filename === null || filename === t.base));
+  if (!candidates.length) return;
+  for (const target of candidates) current.pending.add(target);
+  if (current.timer !== null) clearTimeout(current.timer);
+  current.timer = setTimeout(() => {
+    current.timer = null;
+    if (isCurrent(current, version)) void onDebounceFire(current, version);
+  }, current.debounceMs);
+}
+export function armWatchers(settings: ProvidersSettings, paseo: PaseoApi): Promise<{
+  armed: boolean; watchPaths: WatchTarget[];
 }> {
-  // Route through the shared trigger so status fields stay consistent, but
-  // with the caller-provided session (works even while disarmed).
-  const saved = state.paseo;
-  state.paseo = paseo;
-  await triggerRefresh();
-  state.paseo = saved ?? paseo;
-  return {
-    ok: state.lastError === null,
-    at: state.lastRefreshAt ?? new Date().toISOString(),
-    error: state.lastError,
-  };
-}
+  const version = ++generation;
+  closeWatchers(state);
+  const task = activationQueue.then(async () => {
+    if (version !== generation) return { armed: state.armed, watchPaths: snapshots(state) };
+    const current = { ...initialState(), lastChangeAt: state.lastChangeAt, lastRefreshAt: state.lastRefreshAt };
+    current.enabled = settings.enabled;
+    current.debounceMs = settings.debounceMs;
+    current.paseo = paseo;
+    state = current;
+    if (!settings.enabled) return { armed: false, watchPaths: [] };
 
-export async function watcherStatus(): Promise<{
-  armed: boolean;
-  enabled: boolean;
-  watchPaths: WatchTarget[];
-  debounceMs: number;
-  lastChangeAt: string | null;
-  lastRefreshAt: string | null;
-  lastError: string | null;
-}> {
-  await refreshExistsFlags();
-  return {
-    armed: state.armed,
-    enabled: state.enabled,
-    watchPaths: targetSnapshots(),
-    debounceMs: state.debounceMs,
-    lastChangeAt: state.lastChangeAt,
-    lastRefreshAt: state.lastRefreshAt,
-    lastError: state.lastError,
-  };
+    for (const rawPath of settings.watchPaths) {
+      const resolved = path.resolve(expandHomePath(rawPath));
+      if (current.targets.has(resolved)) continue;
+      current.targets.set(resolved, { rawPath, resolved, dir: path.dirname(resolved),
+        base: path.basename(resolved), exists: false, lastHash: null });
+    }
+    await Promise.all([...current.targets.values()].map(async target => {
+      try {
+        const hash = await hashFile(target.resolved);
+        if (!isCurrent(current, version)) return;
+        target.lastHash = hash;
+        target.exists = hash !== null;
+      } catch (error) {
+        if (isCurrent(current, version)) current.lastError = messageOf(error);
+      }
+    }));
+    if (!isCurrent(current, version)) return { armed: state.armed, watchPaths: snapshots(state) };
+    for (const dir of new Set([...current.targets.values()].map(t => t.dir))) {
+      try {
+        const watcher = watch(dir, { persistent: false }, (_event, filename) =>
+          onDirectoryEvent(current, version, dir, filename));
+        watcher.on("error", error => {
+          if (!isCurrent(current, version)) return;
+          current.lastError = messageOf(error);
+          watcher.close();
+          current.watchers.delete(dir);
+          current.armed = current.watchers.size > 0;
+        });
+        current.watchers.set(dir, watcher);
+      } catch (error) {
+        current.lastError = messageOf(error);
+      }
+    }
+    current.armed = current.watchers.size > 0;
+    return { armed: current.armed, watchPaths: snapshots(current) };
+  });
+  activationQueue = task.catch(() => {});
+  return task;
 }
-
+export async function refreshNow(paseo: PaseoApi) {
+  return triggerRefresh(state, generation, paseo);
+}
+export async function watcherStatus() {
+  const current = state;
+  const version = generation;
+  await Promise.all([...current.targets.values()].map(async target => {
+    try {
+      const stat = await fs.stat(target.resolved);
+      if (isCurrent(current, version)) target.exists = stat.isFile();
+    } catch (error) {
+      if (!isCurrent(current, version)) return;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") target.exists = false;
+      else current.lastError = messageOf(error);
+    }
+  }));
+  return { armed: state.armed, enabled: state.enabled, watchPaths: snapshots(state),
+    debounceMs: state.debounceMs, lastChangeAt: state.lastChangeAt,
+    lastRefreshAt: state.lastRefreshAt, lastError: state.lastError };
+}
 export function disarmWatchers(): void {
-  closeWatchers();
+  generation += 1;
+  closeWatchers(state);
   state = initialState();
 }
-
-/** Register the provider watcher RPC handlers; returns the feature cleanup. */
 export function registerProvidersWatcher(server: PluginServerContext): () => void {
   server.handle(providersArmRpc, (input, { paseo }) => armWatchers(input, paseo));
   server.handle(providersStatusRpc, () => watcherStatus());
   server.handle(providersRefreshNowRpc, (_input, { paseo }) => refreshNow(paseo));
-  return () => disarmWatchers();
+  return disarmWatchers;
 }
