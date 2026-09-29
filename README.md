@@ -19,13 +19,25 @@ every feature's text live; `Auto` detects the locale from the browser
 
 ### Wallpaper（任意壁纸）
 
-Paints any image behind Paseo's chat and glass surfaces (desktop/web app;
-mobile keeps native surfaces). Successor to
+Paints any image behind Paseo's chat and glass surfaces in the desktop app,
+using only its local daemon's plugin settings. Remote hosts never supply
+wallpaper settings or images, including when their plugin settings page is
+opened. Browser and mobile clients keep their normal theme. Successor to
 [paseo-miku-theme](https://github.com/ZhonghuaYi/paseo-miku-theme), shipping
 its own neutral theme pair — *Advance Cream* (light) / *Advance Indigo*
 (dark) — that stays balanced under arbitrary wallpapers.
 Select either theme from Paseo's Settings → Appearance page; Paseo owns
 persistence and fallback when a contributing host is unavailable.
+
+Wallpaper ownership is automatic: the desktop's daemon status identifies its
+local server, and each plugin installation reports its daemon identity before
+any wallpaper settings or image reads. Only matching installations can paint.
+There is no remote fallback when local identity is unavailable or the local
+plugin is disabled. This uses Paseo's internal desktop status bridge, so an
+unsupported or changed bridge disables wallpaper instead of guessing a host.
+Themes contributed through Appearance remain available independently.
+Update/reload the plugin on both local and remote daemons when adopting this
+policy; an older remote bundle still contains its previous background behavior.
 
 - **Import & manage**: pick images in the settings screen; they are downscaled
   to ≤2560 px and re-encoded as WebP in the app, then stored daemon-side under

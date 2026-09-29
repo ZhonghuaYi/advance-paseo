@@ -9,8 +9,10 @@ import { randomUUID } from "node:crypto";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import type { RpcInput } from "@getpaseo/plugin";
 import { expandHomePath, paseoHome } from "./paths";
+import { readWallpaperHostId } from "./wallpaper-host";
 import {
   wallpaperDeleteRpc,
+  wallpaperHostRpc,
   wallpaperListRpc,
   wallpaperReadPathRpc,
   wallpaperReadRpc,
@@ -193,6 +195,7 @@ export async function deleteWallpaper(input: RpcInput<typeof wallpaperDeleteRpc>
 
 /** Register every wallpaper RPC handler; returns the feature cleanup. */
 export function registerWallpaperStore(server: PluginServerContext): () => void {
+  server.handle(wallpaperHostRpc, async () => ({ serverId: await readWallpaperHostId() }));
   server.handle(wallpaperListRpc, () => listWallpapers());
   server.handle(wallpaperUploadRpc, (input) => uploadWallpaper(input));
   server.handle(wallpaperReadRpc, (input) => readWallpaper(input));

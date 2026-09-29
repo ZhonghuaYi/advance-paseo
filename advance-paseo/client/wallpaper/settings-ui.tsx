@@ -19,7 +19,7 @@ import {
   SettingsSelect,
   SettingsSwitch,
 } from "@getpaseo/plugin/client/ui";
-import { isWebPlatform, pickWallpaperImage } from "../web";
+import { getLocalWallpaperHostId, isWebPlatform, pickWallpaperImage } from "../web";
 import { useText } from "../i18n/store";
 import { format as formatTemplate } from "../i18n/dictionaries";
 import { SliderRow } from "../ui/slider-row";
@@ -28,11 +28,13 @@ import {
   applyWallpaperState,
   engineStateOf,
   beginWallpaperImages,
+  verifyWallpaperHost,
+  installWallpaperEngine,
   type WallpaperImageRequest,
   type WallpaperImages,
 } from "./engine";
 import { resolveWallpaperImagesWith, type WallpaperReader } from "./loader";
-import { ACCENT_VALUES } from "./palettes";
+import { ACCENT_VALUES, PALETTE_PAIRS } from "./palettes";
 import {
   BLUR_PRESETS,
   BLUR_RANGE,
@@ -56,7 +58,44 @@ function formatBytes(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KiB`;
 }
 
-export function WallpaperSettingsSection({ theme, layout, host }: PluginSurfaceProps) {
+/** Remote screens never mount the editor, so they cannot read images or preview. */
+export function WallpaperSettingsSection(props: PluginSurfaceProps) {
+  const t = useText();
+  const [identity, setIdentity] = useState<{ hostId: string; localId: string | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const probe = async () => {
+      const localId = await getLocalWallpaperHostId();
+      if (cancelled) return;
+      // Host props come from Paseo. This also recovers from exhausted startup
+      // retries, without granting permission to a remote bundle or preview.
+      if (localId !== null && localId === props.host.id && verifyWallpaperHost(props.host.id, localId)) {
+        installWallpaperEngine(PALETTE_PAIRS[0].light);
+      }
+      setIdentity({ hostId: props.host.id, localId });
+      // The local daemon may still be starting when settings first mount.
+      if (localId === null && attempt < 4) timer = setTimeout(() => { void probe(); }, 1000 * 2 ** attempt++);
+    };
+    void probe();
+    return () => { cancelled = true; if (timer !== null) clearTimeout(timer); };
+  }, [props.host.id]);
+  const checked = identity?.hostId === props.host.id;
+  if (checked && identity.localId === props.host.id) {
+    return <LocalWallpaperSettingsSection key={props.host.id} {...props} />;
+  }
+  return (
+    <SettingsSection title={t.wallpaper.sectionTitle}>
+      <Text style={{ color: props.theme.colors.foregroundMuted }}>
+        {!checked ? t.wallpaper.checkingLocalHost : identity.localId === null
+          ? t.wallpaper.localHostUnavailable : t.wallpaper.localHostOnly}
+      </Text>
+    </SettingsSection>
+  );
+}
+
+function LocalWallpaperSettingsSection({ theme, layout, host }: PluginSurfaceProps) {
   const settings = useSettings(wallpaperSettings);
   const t = useText();
   const listRpc = useRpc(wallpaperListRpc);

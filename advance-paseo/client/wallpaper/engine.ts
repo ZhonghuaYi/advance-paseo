@@ -155,6 +155,18 @@ const CONTROLLER_PROPERTY = "__paseoAdvanceController";
  */
 const INSTANCE_KEY = `advance-${Math.random().toString(36).slice(2, 10)}`;
 
+// Per-bundle permission, not shared through the document. Remote installations
+// must not acquire a reference to, paint, or keep alive the local controller.
+let localHostVerified = false;
+
+export function verifyWallpaperHost(serverId: string | null, localServerId: string | null): boolean {
+  const allowed = typeof serverId === "string" && serverId.trim().length > 0 &&
+    typeof localServerId === "string" && serverId.trim() === localServerId.trim();
+  if (!allowed) removeWallpaperEngine();
+  localHostVerified = allowed;
+  return allowed;
+}
+
 /** Who is trying to write engine state. */
 export type WallpaperWriteOrigin = "settings" | "bootstrap";
 
@@ -164,28 +176,14 @@ export type WallpaperWriteResult = "applied" | "deferred" | "rejected";
 /**
  * Single-writer ownership over the shared engine.
  *
- * The wallpaper paints one DOM layer for the whole window, but every
- * connected host's bundle instance used to push its own persisted settings
- * at connect time — the window showed whichever host initialized last. The
- * user-facing rule is now: the window follows the CLIENT's host. Two write
- * paths implement it:
- *
- * - `"bootstrap"` (background init at host connect) may only write while
- *   the engine has NO owner yet. The first host to finish initializing —
- *   in practice the client's own daemon, which the app always connects
- *   first — owns the window; every later-connected host's background apply
- *   is rejected and never repaints the window.
- * - `"settings"` (a mounted settings screen — its component runs inside
- *   the host the user selected in the host picker) may always write and
- *   takes over ownership, so live preview works no matter which host's
- *   settings are open. Opening another host's settings deliberately
- *   re-targets the window; the previous owner is not restored afterwards.
- *
- * When the owning instance's connection goes away it releases ownership;
- * the painting stays as-is (no flash) and the next host to bootstrap —
- * e.g. the client's daemon reconnecting — may claim the window again.
+ * Only instances verified against this desktop's local daemon may install
+ * or write. This ownership protocol arbitrates multiple local instances;
+ * remote instances never join the shared controller. Local settings previews
+ * supersede startup reads. Disconnecting the last local instance removes
+ * the wallpaper rather than handing it over to any remote host.
  */
 function canWrite(current: WallpaperController, origin: WallpaperWriteOrigin): boolean {
+  if (!localHostVerified) return false;
   if (origin === "bootstrap" && current.ownerKey === INSTANCE_KEY && current.interactiveOwner) return false;
   if (current.ownerKey === null || current.ownerKey === INSTANCE_KEY) return true;
   return origin === "settings";
@@ -228,6 +226,7 @@ export function applyWallpaperState(
   state: WallpaperEngineState,
   origin: WallpaperWriteOrigin = "settings",
 ): WallpaperWriteResult {
+  if (!localHostVerified) return "rejected";
   if (typeof document === "undefined") return "deferred";
   const current = liveController();
   if (!current || current.stopped) return "deferred";
@@ -297,7 +296,7 @@ export function beginWallpaperImages(
   const current = liveController()!;
   const version = ++current.imageVersion;
   let cancelled = false;
-  const isCurrent = () => !cancelled && !current.stopped && liveController() === current &&
+  const isCurrent = () => localHostVerified && !cancelled && !current.stopped && liveController() === current &&
     current.ownerKey === INSTANCE_KEY && current.imageVersion === version;
   return {
     isCurrent,
@@ -314,6 +313,7 @@ export function beginWallpaperImages(
  * instance) leaves. Safe to call when none exists.
  */
 export function removeWallpaperEngine(): void {
+  localHostVerified = false;
   if (typeof document === "undefined") return;
   if (pendingInstallTimer !== null) {
     // Our deferred install never ran; we hold no claim to release.
@@ -411,7 +411,8 @@ function hostExposesSurfaceVariables(): boolean {
 export function installWallpaperEngine(
   theme: PluginThemeContribution,
 ): PluginThemeContribution {
-  if (typeof document === "undefined") return theme;
+  if (!localHostVerified || typeof document === "undefined") return theme;
+  if (joinedSharedEngine || pendingInstallTimer !== null) return theme;
 
   // Another instance (this or an earlier host connection) already owns the
   // document's engine: join it instead of installing a second one.

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   settings: {} as any,
   rpcs: new Map<string, ReturnType<typeof vi.fn>>(),
   applyState: vi.fn(), appliedImages: vi.fn(),
+  verifyHost: vi.fn((host: string, local: string) => host === local), installEngine: vi.fn(),
 }));
 vi.mock("react-native", () => ({ View: "View", Text: "Text", Pressable: "Pressable", Image: "Image" }));
 vi.mock("@getpaseo/plugin/client", () => ({
@@ -20,9 +21,11 @@ vi.mock("@getpaseo/plugin/client/ui", () => ({
   SettingsRow: "SettingsRow", SettingsSection: "SettingsSection", SettingsSelect: "SettingsSelect", SettingsSwitch: "SettingsSwitch",
 }));
 vi.mock("../ui/slider-row", () => ({ SliderRow: "SliderRow" }));
-vi.mock("../web", () => ({ isWebPlatform: () => true, pickWallpaperImage: vi.fn(async () => null) }));
+vi.mock("../web", () => ({ getLocalWallpaperHostId: vi.fn(async () => "one"), isWebPlatform: () => true, pickWallpaperImage: vi.fn(async () => null) }));
 vi.mock("../i18n/store", () => ({ useText: () => en }));
 vi.mock("./engine", () => ({
+  verifyWallpaperHost: mocks.verifyHost,
+  installWallpaperEngine: mocks.installEngine,
   engineStateOf: (values: unknown) => values,
   applyWallpaperState: mocks.applyState,
   beginWallpaperImages: () => {
@@ -43,6 +46,7 @@ const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.applyState.mockClear(); mocks.appliedImages.mockClear(); mocks.rpcs.clear();
+  mocks.verifyHost.mockClear(); mocks.installEngine.mockClear();
   mocks.settings = { status: "ready", values: { ...WALLPAPER_SETTINGS_DEFAULTS, light: { kind: "managed", id: "a" } },
     revision: "1", saving: false, saveError: null, save: vi.fn(async () => false), reload: vi.fn(async () => {}), reset: vi.fn() };
   for (const name of ["list", "read", "read-path", "upload", "delete"]) mocks.rpcs.set(`advance.wallpaper.${name}`, vi.fn());
@@ -53,14 +57,45 @@ beforeEach(() => {
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); vi.unstubAllGlobals(); });
 async function mount() {
   await act(async () => { renderer = create(createElement(WallpaperSettingsSection, props)); await flush(); });
+  await act(async () => { await flush(); });
 }
 function deleteButton() {
   return renderer.root.findAll(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "Delete Photo")[0];
 }
 
 describe("wallpaper settings operations", () => {
+  it("never loads settings images or previews from a remote host", async () => {
+    await act(async () => { renderer = create(createElement(WallpaperSettingsSection,
+      { ...props, host: { id: "remote", label: "Remote" } })); await flush(); });
+    await act(async () => { await flush(); });
+    expect(rpc("list")).not.toHaveBeenCalled();
+    expect(rpc("read")).not.toHaveBeenCalled();
+    expect(mocks.applyState).not.toHaveBeenCalled();
+    expect(mocks.appliedImages).not.toHaveBeenCalled();
+    expect(mocks.verifyHost).not.toHaveBeenCalled();
+    expect(mocks.installEngine).not.toHaveBeenCalled();
+    expect(renderer.root.findAll(node => String(node.type) === "Text" &&
+      node.props.children === en.wallpaper.localHostOnly)).toHaveLength(1);
+  });
+  it("switching to remote settings cancels pending local previews without reading remote images", async () => {
+    let finish!: (value: { dataUrl: string }) => void;
+    rpc("read").mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    await mount();
+    const reads = rpc("read").mock.calls.length;
+    mocks.applyState.mockClear();
+    await act(async () => {
+      renderer.update(createElement(WallpaperSettingsSection, { ...props, host: { id: "remote", label: "Remote" } }));
+      await flush();
+    });
+    await act(async () => { finish({ dataUrl: "late-image" }); await flush(); });
+    expect(rpc("read")).toHaveBeenCalledTimes(reads);
+    expect(mocks.applyState).not.toHaveBeenCalled();
+    expect(mocks.appliedImages).not.toHaveBeenCalled();
+  });
   it("preserves the image and restores persisted preview when save fails", async () => {
     await mount();
+    expect(mocks.verifyHost).toHaveBeenCalledWith("one", "one");
+    expect(mocks.installEngine).toHaveBeenCalledOnce();
     await act(async () => { deleteButton().props.onPress(); await flush(); });
     expect(mocks.settings.save).toHaveBeenCalledWith(expect.objectContaining({ light: null }), "1");
     expect(rpc("delete")).not.toHaveBeenCalled();

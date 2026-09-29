@@ -1,11 +1,11 @@
 // Wallpaper feature contribution: registers every palette pair as an
-// official Paseo theme (the engine installs alongside the first one, exactly
-// like the Miku plugin it descends from) and applies persisted settings plus
-// the active wallpaper images as soon as the host can serve them.
+// official Paseo theme. Wallpaper installation and reads are separately
+// gated on this installation matching the desktop's local daemon identity.
 
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import {
   wallpaperReadPathRpc,
+  wallpaperHostRpc,
   wallpaperReadRpc,
   wallpaperSettingsRpc,
   parseWallpaperSettings,
@@ -16,7 +16,9 @@ import {
   installWallpaperEngine,
   removeWallpaperEngine,
   beginWallpaperImages,
+  verifyWallpaperHost,
 } from "./engine";
+import { getLocalWallpaperHostId } from "../web";
 import { resolveWallpaperImagesWith, type WallpaperReader } from "./loader";
 import { PALETTE_PAIRS } from "./palettes";
 
@@ -31,17 +33,15 @@ const INIT_RETRY_DELAYS_MS: readonly number[] = [1_000, 2_000, 4_000, 8_000];
  * settings screen happens to be opened. Every step is idempotent, so a retry
  * after a partial success just re-applies the same state.
  *
- * Writes carry the "bootstrap" origin: with several hosts connected, only
- * the FIRST one to initialize owns the window's wallpaper (the client's own
- * daemon in practice) — later hosts' background applies are rejected, and a
- * rejection ends the retry loop because it can never succeed. Opening a
- * host's Advance settings screen deliberately re-targets the window.
+ * Verify desktop and installation identities before installing the engine or
+ * reading settings/images. Unknown identities retry; remote identities stop.
  */
 async function initWallpaperRuntime(
   client: PluginClientContext,
   isDisposed: () => boolean,
   wait: (delay: number) => Promise<void>,
 ): Promise<void> {
+  let verified = false;
   const reader: WallpaperReader = {
     readManaged: (id) =>
       client.rpc(wallpaperReadRpc, { id }).then((result) => result.dataUrl),
@@ -52,6 +52,17 @@ async function initWallpaperRuntime(
   for (let attempt = 0; ; attempt += 1) {
     try {
       if (!isDisposed()) {
+        if (!verified) {
+          const localId = await getLocalWallpaperHostId();
+          if (isDisposed()) return;
+          if (!localId) throw new Error("Local desktop daemon identity unavailable");
+          const host = await client.rpc(wallpaperHostRpc, {});
+          if (isDisposed()) return;
+          if (!host.serverId) throw new Error("Plugin daemon identity unavailable");
+          if (!verifyWallpaperHost(host.serverId, localId)) return;
+          installWallpaperEngine(PALETTE_PAIRS[0].light);
+          verified = true;
+        }
         const read = await client.rpc(wallpaperSettingsRpc.read, {});
         if (isDisposed()) return;
         if (read.status === "ready") {
@@ -89,11 +100,8 @@ async function initWallpaperRuntime(
 }
 
 export function contributeWallpaper(client: PluginClientContext): () => void {
-  PALETTE_PAIRS.forEach((pair, index) => {
-    // The engine installs as a side effect of the first addTheme call so it
-    // exists before any theme can be selected; it stays dormant until both a
-    // mode is detected and the matching image slot is populated.
-    client.addTheme(index === 0 ? installWallpaperEngine(pair.light) : pair.light);
+  PALETTE_PAIRS.forEach((pair) => {
+    client.addTheme(pair.light);
     client.addTheme(pair.dark);
   });
 

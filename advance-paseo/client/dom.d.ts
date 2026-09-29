@@ -204,6 +204,7 @@ interface AdvanceMediaQueryList {
 }
 
 declare const window: {
+  readonly paseoDesktop?: { invoke?: (command: string) => Promise<unknown> };
   setTimeout(handler: () => void, timeout: number): number;
   clearTimeout(id: number): void;
   setInterval(handler: () => void, timeout: number): number;

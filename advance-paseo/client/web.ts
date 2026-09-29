@@ -22,6 +22,28 @@ export function isWebPlatform(): boolean {
   return Platform.OS === "web";
 }
 
+/** Desktop-only internal adapter. No browser/remote-host identity guessing. */
+export async function getLocalWallpaperHostId(): Promise<string | null> {
+  if (!isWebPlatform() || typeof window === "undefined") return null;
+  const bridge = window.paseoDesktop;
+  if (typeof bridge?.invoke !== "function") return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      bridge.invoke("desktop_daemon_status"),
+      new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), 3000); }),
+    ]);
+    if (!result || typeof result !== "object") return null;
+    const status = Reflect.get(result, "status");
+    const id = Reflect.get(result, "serverId");
+    return status === "running" && typeof id === "string" ? id.trim() || null : null;
+  } catch {
+    return null;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /** Map the browser locale to a plugin language; null when unavailable. */
 export function detectWebLanguage(): "zh" | "en" | null {
   if (typeof navigator === "undefined") return null;

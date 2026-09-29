@@ -31,7 +31,10 @@ export const en = {
   wallpaper: {
     sectionTitle: "Wallpaper",
     sectionInfo:
-      "Paints any image behind chat and glass surfaces. Works in the desktop and web apps; mobile keeps Paseo's native surfaces.",
+      "Uses only this desktop's local plugin wallpaper settings. Remote hosts cannot change the background.",
+    checkingLocalHost: "Identifying this desktop's local host…",
+    localHostUnavailable: "Wallpaper requires an identifiable local daemon in the Paseo desktop app. The current theme is preserved.",
+    localHostOnly: "Wallpaper is managed by this desktop's local host. Remote wallpaper settings are not loaded or applied.",
     loading: "Loading wallpaper settings…",
     masterLabel: "Wallpaper",
     masterHint: "Master switch for the painting enhancement",
@@ -175,7 +178,10 @@ export const zh: Dictionary = {
   wallpaper: {
     sectionTitle: "壁纸",
     sectionInfo:
-      "在聊天和玻璃质感界面下铺设任意图片。支持桌面端与网页端；移动端保持 Paseo 原生界面。",
+      "只使用本机桌面客户端所连接的本地插件壁纸设置，远端主机不会改变背景。",
+    checkingLocalHost: "正在识别本机主机…",
+    localHostUnavailable: "壁纸需要 Paseo 桌面端能够识别本机 daemon。当前主题保持不变。",
+    localHostOnly: "壁纸由本机主机管理，不加载或应用远端壁纸设置。",
     loading: "正在加载壁纸设置…",
     masterLabel: "启用壁纸",
     masterHint: "壁纸绘制增强的总开关",

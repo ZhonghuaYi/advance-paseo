@@ -161,6 +161,25 @@ function subscribeAgentFactory(client: PluginClientContext) {
         fetchHistory();
         return;
       }
+      if (update.event.type === "subscription_restored") {
+        // Reconnected: events during the gap are lost and the daemon does not
+        // replay them. Rebuild from history, and settle a meter whose turn may
+        // have ended unseen; the next usage/turn event re-arms it.
+        fold = createTaskFoldState();
+        pushSnapshot();
+        fetchHistory();
+        if (meter.running) {
+          meter = onTurnSettled(meter, Date.now(), undefined);
+          pushMeter();
+          manageTick();
+        }
+        return;
+      }
+      if (update.event.type === "error") {
+        // The SDK releases the observation after an error; nothing more arrives.
+        console.error("[advance-paseo] live chat stream failed", update.event.error);
+        return;
+      }
       applyEvent(update.event);
     });
     void subscription.ready.catch((error) => {

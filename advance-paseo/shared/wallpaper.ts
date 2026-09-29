@@ -110,6 +110,13 @@ export const WALLPAPER_SETTINGS_ID = "advance-wallpaper";
 
 export const wallpaperSettingsRpc = settingsRpc(WALLPAPER_SETTINGS_ID);
 
+/** Identify this installation before the desktop permits any wallpaper reads. */
+export const wallpaperHostRpc = defineRpc({
+  name: "advance.wallpaper.host",
+  input: z.object({}).strict(),
+  output: z.object({ serverId: z.string().nullable() }),
+});
+
 /** Parse untrusted stored values; falls back to defaults when invalid. */
 export function parseWallpaperSettings(values: unknown): WallpaperSettings {
   const result = wallpaperSettingsSchema.safeParse(values);
@@ -161,4 +168,3 @@ export const wallpaperDeleteRpc = defineRpc({
   input: z.object({ id: z.string().min(1) }),
   output: z.object({ deleted: z.boolean() }),
 });
-
